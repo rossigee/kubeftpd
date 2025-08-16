@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -62,7 +62,7 @@ jobs:
       image-tags: ${{ steps.meta.outputs.tags }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -112,7 +112,7 @@ jobs:
       packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -195,7 +195,7 @@ jobs:
     if: github.ref_name != 'main' && !contains(github.ref_name, 'alpha')
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Configure kubectl
       run: |
@@ -257,7 +257,7 @@ jobs:
     if: github.ref_name == 'main' || startsWith(github.ref_name, 'v')
     steps:
     - name: Checkout chart repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: ${{ github.repository }}-charts
         token: ${{ secrets.CHART_REPO_TOKEN }}
