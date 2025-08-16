@@ -76,7 +76,6 @@ linters:
     - revive
     - unconvert
     - unparam
-    - typecheck
   disable:
     - exhaustive    # Too strict for this codebase
 
