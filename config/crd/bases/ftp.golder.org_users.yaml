@@ -71,9 +71,27 @@ spec:
                 pattern: ^/.*
                 type: string
               password:
-                description: Password is the FTP password (should be stored in a Secret
-                  in production)
+                description: Password is the FTP password (plaintext, not recommended
+                  for production)
                 type: string
+              passwordSecret:
+                description: PasswordSecret references a Kubernetes Secret containing
+                  the password
+                properties:
+                  key:
+                    default: password
+                    description: Key is the key in the secret containing the password
+                    type: string
+                  name:
+                    description: Name of the secret
+                    type: string
+                  namespace:
+                    description: Namespace of the secret (defaults to same namespace
+                      as User)
+                    type: string
+                required:
+                - name
+                type: object
               permissions:
                 description: Permissions define what the user can do
                 properties:
@@ -101,7 +119,6 @@ spec:
             required:
             - backend
             - homeDirectory
-            - password
             - username
             type: object
           status:

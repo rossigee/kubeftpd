@@ -1,0 +1,184 @@
+# Production-Ready User Management Demo
+# This example shows how to set up secure FTP users with secret-based passwords
+
+---
+# Namespace for our FTP users and secrets
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ftp-users
+  labels:
+    purpose: ftp-user-management
+    security-level: production
+
+---
+# RBAC: ServiceAccount for KubeFTPd to access secrets
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubeftpd-secret-reader
+  namespace: ftp-users
+
+---
+# RBAC: Role to read user secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ftp-users
+  name: ftp-secret-reader
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+  # Restrict to secrets with specific naming pattern
+  resourceNames: ["*-ftp-password"]
+
+---
+# RBAC: Bind the role to the service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubeftpd-secret-access
+  namespace: ftp-users
+subjects:
+- kind: ServiceAccount
+  name: kubeftpd-secret-reader
+  namespace: ftp-users
+roleRef:
+  kind: Role
+  name: ftp-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Secret for production user with strong password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: john-doe-ftp-password
+  namespace: ftp-users
+  labels:
+    user: john-doe
+    purpose: ftp-authentication
+  annotations:
+    created-by: "admin@company.com"
+    rotation-schedule: "quarterly"
+type: Opaque
+data:
+  # Strong password: "Prod#Secure$Pass2024!"
+  password: UHJvZCNTZWN1cmUkUGFzczIwMjQh
+
+---
+# Secret for API user with custom key
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-service-credentials
+  namespace: ftp-users
+  labels:
+    user: api-service
+    purpose: automated-ftp-access
+type: Opaque
+data:
+  # Custom key for API service: "Api$Service#Key789"
+  ftp-access-key: QXBpJFNlcnZpY2UjS2V5Nzg5
+
+---
+# Production user with secret-based password
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: john-doe
+  namespace: ftp-users
+  labels:
+    user-type: human
+    department: marketing
+    access-level: standard
+spec:
+  username: "john.doe"
+  passwordSecret:
+    name: "john-doe-ftp-password"
+    key: "password"
+  backend:
+    kind: MinioBackend
+    name: production-storage
+    namespace: default
+  homeDirectory: "/marketing/john-doe"
+  enabled: true
+  permissions:
+    read: true
+    write: true
+    delete: false  # No delete permissions for safety
+    list: true
+
+---
+# API service user with custom secret key
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: api-service
+  namespace: ftp-users
+  labels:
+    user-type: service
+    department: engineering
+    access-level: automated
+spec:
+  username: "api-service"
+  passwordSecret:
+    name: "api-service-credentials"
+    key: "ftp-access-key"  # Custom key name
+  backend:
+    kind: MinioBackend
+    name: production-storage
+    namespace: default
+  homeDirectory: "/api-uploads"
+  enabled: true
+  permissions:
+    read: true
+    write: true
+    delete: true   # API service can delete files
+    list: true
+
+---
+# Development user with plaintext password (not for production)
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: dev-test-user
+  namespace: ftp-users
+  labels:
+    user-type: development
+    environment: testing
+    warning: "plaintext-password"
+  annotations:
+    security-warning: "This user uses plaintext password - not for production"
+spec:
+  username: "dev.test"
+  password: "dev123"  # Only for development/testing
+  backend:
+    kind: FilesystemBackend
+    name: dev-storage
+    namespace: default
+  homeDirectory: "/dev-sandbox"
+  enabled: true
+  permissions:
+    read: true
+    write: true
+    delete: true
+    list: true
+
+---
+# Monitoring: ServiceMonitor for password security metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kubeftpd-security-metrics
+  namespace: ftp-users
+spec:
+  selector:
+    matchLabels:
+      app: kubeftpd
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s

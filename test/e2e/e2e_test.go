@@ -259,14 +259,124 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput := getMetricsOutput()
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+		It("should create and reconcile users with different password methods", func() {
+			By("creating a test secret for password authentication")
+			cmd := exec.Command("kubectl", "create", "secret", "generic", "test-user-password",
+				"--from-literal=password=StrongSecret123!",
+				"-n", namespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test secret")
+
+			By("creating a test backend")
+			backendYAML := fmt.Sprintf(`
+apiVersion: ftp.golder.org/v1
+kind: MinioBackend
+metadata:
+  name: test-backend
+  namespace: %s
+spec:
+  endpoint: "http://minio:9000"
+  bucket: "test-bucket"
+  region: "us-east-1"
+  credentials:
+    accessKeyID: "testkey"
+    secretAccessKey: "testsecret"
+`, namespace)
+
+			backendFile := filepath.Join("/tmp", "test-backend.yaml")
+			err = os.WriteFile(backendFile, []byte(backendYAML), 0644)
+			Expect(err).NotTo(HaveOccurred())
+
+			cmd = exec.Command("kubectl", "apply", "-f", backendFile)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test backend")
+
+			By("creating a user with plaintext password")
+			plaintextUserYAML := fmt.Sprintf(`
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: plaintext-user
+  namespace: %s
+spec:
+  username: "plaintext"
+  password: "StrongPassword123!"
+  homeDirectory: "/home/plaintext"
+  backend:
+    kind: "MinioBackend"
+    name: "test-backend"
+  permissions:
+    read: true
+    write: true
+    delete: true
+    list: true
+`, namespace)
+
+			plaintextUserFile := filepath.Join("/tmp", "plaintext-user.yaml")
+			err = os.WriteFile(plaintextUserFile, []byte(plaintextUserYAML), 0644)
+			Expect(err).NotTo(HaveOccurred())
+
+			cmd = exec.Command("kubectl", "apply", "-f", plaintextUserFile)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create plaintext user")
+
+			By("creating a user with secret-based password")
+			secretUserYAML := fmt.Sprintf(`
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: secret-user
+  namespace: %s
+spec:
+  username: "secretuser"
+  passwordSecret:
+    name: "test-user-password"
+    key: "password"
+  homeDirectory: "/home/secretuser"
+  backend:
+    kind: "MinioBackend"
+    name: "test-backend"
+  permissions:
+    read: true
+    write: true
+    delete: true
+    list: true
+`, namespace)
+
+			secretUserFile := filepath.Join("/tmp", "secret-user.yaml")
+			err = os.WriteFile(secretUserFile, []byte(secretUserYAML), 0644)
+			Expect(err).NotTo(HaveOccurred())
+
+			cmd = exec.Command("kubectl", "apply", "-f", secretUserFile)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create secret user")
+
+			By("verifying users are reconciled successfully")
+			verifyUserReconciled := func(userName string) func(g Gomega) {
+				return func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "user", userName, "-n", namespace, "-o", "jsonpath={.status.ready}")
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(Equal("true"), fmt.Sprintf("User %s should be ready", userName))
+				}
+			}
+
+			Eventually(verifyUserReconciled("plaintext-user")).Should(Succeed())
+			Eventually(verifyUserReconciled("secret-user")).Should(Succeed())
+
+			By("verifying metrics include authentication events")
+			metricsOutput := getMetricsOutput()
+			Expect(metricsOutput).To(ContainSubstring("kubeftpd_authentication_attempts_total"))
+			Expect(metricsOutput).To(ContainSubstring("kubeftpd_password_retrieval_duration_seconds"))
+
+			By("cleaning up test resources")
+			cmd = exec.Command("kubectl", "delete", "user", "plaintext-user", "secret-user", "-n", namespace)
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "miniobackend", "test-backend", "-n", namespace)
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "secret", "test-user-password", "-n", namespace)
+			_, _ = utils.Run(cmd)
+		})
 	})
 })
 

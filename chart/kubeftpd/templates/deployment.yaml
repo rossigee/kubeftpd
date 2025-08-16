@@ -44,18 +44,26 @@ spec:
         - --leader-elect
         {{- end }}
         env:
+        - name: FTP_PORT
+          value: {{ .Values.ftp.service.port | quote }}
+        - name: FTP_PASSIVE_PORT_MIN
+          value: {{ .Values.ftp.passive.service.portRange.min | quote }}
+        - name: FTP_PASSIVE_PORT_MAX
+          value: {{ .Values.ftp.passive.service.portRange.max | quote }}
         - name: FTP_WELCOME_MESSAGE
           value: {{ .Values.ftp.settings.welcomeMessage | quote }}
         - name: FTP_IDLE_TIMEOUT
           value: {{ .Values.ftp.settings.idleTimeout | quote }}
         - name: FTP_MAX_CONNECTIONS
           value: {{ .Values.ftp.settings.maxConnections | quote }}
-        {{- if .Values.ftp.passive.enabled }}
-        - name: FTP_PASSIVE_PORT_RANGE
-          value: "{{ .Values.ftp.passive.service.portRange.min }}-{{ .Values.ftp.passive.service.portRange.max }}"
+        {{- if .Values.controller.metrics.enabled }}
+        - name: METRICS_PORT
+          value: "8080"
         {{- end }}
+        - name: HEALTH_PORT
+          value: "8081"
         ports:
-        - containerPort: 21
+        - containerPort: {{ .Values.ftp.service.port }}
           name: ftp
           protocol: TCP
         {{- if .Values.ftp.passive.enabled }}

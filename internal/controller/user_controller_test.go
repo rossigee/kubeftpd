@@ -329,6 +329,71 @@ func TestUserReconciler_validateUser(t *testing.T) {
 			wantErr: true,
 			errMsg:  "username is required",
 		},
+		{
+			name: "valid user with secret",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testuser-secret",
+					Namespace: "default",
+				},
+				Spec: ftpv1.UserSpec{
+					Username: "testuser",
+					PasswordSecret: &ftpv1.UserSecretRef{
+						Name: "test-secret",
+						Key:  "password",
+					},
+					HomeDirectory: "/home/testuser",
+					Backend: ftpv1.BackendReference{
+						Kind: "MinioBackend",
+						Name: "test-backend",
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing both password and secret",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testuser-nopass",
+					Namespace: "default",
+				},
+				Spec: ftpv1.UserSpec{
+					Username:      "testuser",
+					HomeDirectory: "/home/testuser",
+					Backend: ftpv1.BackendReference{
+						Kind: "MinioBackend",
+						Name: "test-backend",
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "either password or passwordSecret is required",
+		},
+		{
+			name: "both password and secret specified",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testuser-both",
+					Namespace: "default",
+				},
+				Spec: ftpv1.UserSpec{
+					Username: "testuser",
+					Password: "testpass",
+					PasswordSecret: &ftpv1.UserSecretRef{
+						Name: "test-secret",
+						Key:  "password",
+					},
+					HomeDirectory: "/home/testuser",
+					Backend: ftpv1.BackendReference{
+						Kind: "MinioBackend",
+						Name: "test-backend",
+					},
+				},
+			},
+			wantErr: true,
+			errMsg:  "cannot specify both password and passwordSecret",
+		},
 	}
 
 	for _, tt := range tests {

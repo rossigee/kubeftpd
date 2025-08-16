@@ -1,0 +1,67 @@
+{{- if .Values.webhook.enabled }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionWebhook
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-user-validator
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+spec:
+  clientConfig:
+    service:
+      name: {{ include "kubeftpd.fullname" . }}-webhook
+      namespace: {{ .Release.Namespace }}
+      path: /validate-ftp-golder-org-v1-user
+  rules:
+  - operations: ["CREATE", "UPDATE"]
+    apiGroups: ["ftp.golder.org"]
+    apiVersions: ["v1"]
+    resources: ["users"]
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  failurePolicy: {{ .Values.webhook.failurePolicy }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+spec:
+  ports:
+  - name: webhook
+    port: 443
+    targetPort: {{ .Values.webhook.port }}
+  selector:
+    {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-webhook-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    webhook:
+      port: {{ .Values.webhook.port }}
+      certDir: {{ .Values.webhook.certDir | quote }}
+      validation:
+        passwordStrength:
+          enabled: {{ .Values.webhook.validation.passwordStrength.enabled }}
+          minLength: {{ .Values.webhook.validation.passwordStrength.minLength }}
+          requireComplexity: {{ .Values.webhook.validation.passwordStrength.requireComplexity }}
+        production:
+          enabled: {{ .Values.webhook.validation.production.enabled }}
+          requireSecrets: {{ .Values.webhook.validation.production.requireSecrets }}
+          secretNamingPattern: {{ .Values.webhook.validation.production.secretNamingPattern | quote }}
+        secrets:
+          validateExistence: {{ .Values.webhook.validation.secrets.validateExistence }}
+          validateKeyExists: {{ .Values.webhook.validation.secrets.validateKeyExists }}
+{{- end }}

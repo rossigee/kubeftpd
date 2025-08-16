@@ -13,7 +13,9 @@ KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a clo
 - **PASV Mode Support**: Currently supports passive FTP mode with active mode planned
 - **RBAC Integration**: Full Kubernetes RBAC support for access control
 - **Health & Metrics**: Built-in health checks, JSON logging, and metrics endpoints
-- **Security First**: TLS support, credential management via Kubernetes Secrets
+- **Security First**: TLS support, dual password authentication (plaintext/secrets), webhook validation
+- **Password Security**: Kubernetes Secrets integration with production restrictions and strength validation
+- **Webhook Validation**: Admission controllers for password policies and production compliance
 
 ## Architecture
 
@@ -90,6 +92,8 @@ spec:
 ```
 
 4. **Create FTP users:**
+
+Option A - Using plaintext password (development only):
 ```yaml
 apiVersion: ftp.rossigee.com/v1
 kind: User
@@ -99,6 +103,35 @@ metadata:
 spec:
   username: "scanner"
   password: "secure-password"
+  homeDirectory: "/receipts"
+  enabled: true
+  backend:
+    kind: "MinioBackend"
+    name: "minio-backend"
+  permissions:
+    read: true
+    write: true
+    delete: false
+```
+
+Option B - Using Kubernetes Secret (recommended):
+```bash
+# Create secret first
+kubectl create secret generic scanner-password \
+  --from-literal=password="MySecurePassword123!"
+```
+
+```yaml
+apiVersion: ftp.rossigee.com/v1
+kind: User
+metadata:
+  name: scanner-receipts
+  namespace: default
+spec:
+  username: "scanner"
+  passwordSecret:
+    name: "scanner-password"
+    key: "password"
   homeDirectory: "/receipts"
   enabled: true
   backend:
@@ -121,8 +154,11 @@ ftp ftp.example.com 21
 
 ### User CRD
 
-Defines FTP users with their credentials, permissions, and backend configuration.
+Defines FTP users with their credentials, permissions, and backend configuration. Supports both plaintext passwords (development) and Kubernetes Secrets (production).
 
+**Password Methods (mutually exclusive):**
+
+Option A - Plaintext password:
 ```yaml
 apiVersion: ftp.rossigee.com/v1
 kind: User
@@ -131,7 +167,7 @@ metadata:
   namespace: default
 spec:
   username: "ftpuser"
-  password: "secure-password"  # Consider using Secrets
+  password: "secure-password"  # Not recommended for production
   homeDirectory: "/home/ftpuser"
   enabled: true
   backend:
@@ -146,6 +182,37 @@ status:
   ready: true
   message: "User configured successfully"
 ```
+
+Option B - Kubernetes Secret (recommended):
+```yaml
+apiVersion: ftp.rossigee.com/v1
+kind: User
+metadata:
+  name: example-user
+  namespace: default
+spec:
+  username: "ftpuser"
+  passwordSecret:
+    name: "user-credentials"
+    key: "password"
+  homeDirectory: "/home/ftpuser"
+  enabled: true
+  backend:
+    kind: "MinioBackend"
+    name: "my-backend"
+  permissions:
+    read: true
+    write: true
+    delete: false
+status:
+  ready: true
+  message: "User configured successfully"
+```
+
+**Security Notes:**
+- Production environments with `environment: production` namespace labels require secret-based passwords
+- Webhook validation enforces password strength requirements
+- Secret names in production must follow pattern: `.*-ftp-(password|credentials)$`
 
 ### MinioBackend CRD
 
@@ -213,9 +280,12 @@ status:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FTP_PORT` | FTP server port | `21` |
+| `FTP_PORT` | FTP server port (configurable for non-root) | `21` |
 | `FTP_PASSIVE_PORT_MIN` | Minimum passive port range | `30000` |
 | `FTP_PASSIVE_PORT_MAX` | Maximum passive port range | `30100` |
+| `FTP_WELCOME_MESSAGE` | FTP welcome message | `"Welcome to KubeFTPd"` |
+| `FTP_IDLE_TIMEOUT` | FTP connection idle timeout (seconds) | `300` |
+| `FTP_MAX_CONNECTIONS` | Maximum concurrent FTP connections | `100` |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
 | `LOG_FORMAT` | Log format (json, text) | `json` |
 | `METRICS_PORT` | Metrics endpoint port | `8080` |
@@ -224,10 +294,27 @@ status:
 ### Security Best Practices
 
 1. **Use Kubernetes Secrets** for storing credentials instead of plain text
-2. **Enable TLS** for all backend connections
-3. **Set appropriate RBAC** permissions for the KubeFTPd service account
-4. **Use NetworkPolicies** to restrict FTP traffic
-5. **Regularly rotate** credentials and certificates
+2. **Enable Webhook Validation** for password policies and production compliance:
+   ```yaml
+   webhook:
+     enabled: true
+     validation:
+       passwordStrength:
+         enabled: true
+         minLength: 8
+         requireComplexity: true
+       production:
+         enabled: true
+         requireSecrets: true
+   ```
+3. **Production Environment Setup**:
+   - Label production namespaces: `kubectl label namespace production environment=production`
+   - Use strong password patterns avoiding common words
+   - Follow secret naming convention: `*-ftp-password` or `*-ftp-credentials`
+4. **Enable TLS** for all backend connections
+5. **Set appropriate RBAC** permissions for the KubeFTPd service account
+6. **Use NetworkPolicies** to restrict FTP traffic
+7. **Regularly rotate** credentials and certificates
 
 ## Development
 
@@ -333,7 +420,39 @@ kubectl apply -f https://github.com/rossigee/kubeftpd/releases/latest/download/c
 3. **Deploy using Helm (recommended):**
 ```bash
 helm repo add kubeftpd https://rossigee.github.io/kubeftpd
-helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system
+helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system \
+  --set webhook.enabled=true \
+  --set ftp.service.port=2121  # Example: non-root port
+```
+
+**Helm Configuration Options:**
+```yaml
+# values.yaml
+ftp:
+  service:
+    port: 21  # Configurable for non-root deployment
+  passive:
+    service:
+      portRange:
+        min: 30000
+        max: 30100
+
+webhook:
+  enabled: true  # Enable password validation
+  validation:
+    passwordStrength:
+      enabled: true
+      minLength: 8
+      requireComplexity: true
+    production:
+      enabled: true
+      requireSecrets: true
+
+security:
+  passwordPolicy:
+    enforceStrong: true
+    minLength: 8
+    requireComplexity: true
 ```
 
 4. **Or deploy using kubectl:**
@@ -398,7 +517,9 @@ spec:
 Prometheus metrics available on `/metrics` endpoint (port 8080):
 
 - `kubeftpd_active_connections` - Number of active FTP connections
-- `kubeftpd_user_logins_total` - Total user login attempts
+- `kubeftpd_user_logins_total` - Total user login attempts  
+- `kubeftpd_authentication_attempts_total` - Authentication attempts by method and result
+- `kubeftpd_password_retrieval_duration_seconds` - Password retrieval latency from secrets
 - `kubeftpd_backend_operations_total` - Backend operation counters
 - `kubeftpd_errors_total` - Error counters by type
 
@@ -428,7 +549,9 @@ Structured JSON logging with configurable levels:
 
 2. **Authentication failures**
    - Verify User CRD exists and is enabled
-   - Check credentials in User spec
+   - Check credentials in User spec (password or passwordSecret)
+   - For secret-based auth: verify secret exists and contains correct key
+   - Check webhook validation logs if enabled
    - Review controller logs for errors
 
 3. **Backend connection errors**
@@ -440,6 +563,12 @@ Structured JSON logging with configurable levels:
    - Ensure passive port range is accessible
    - Check NAT/firewall configuration
    - Verify client passive mode settings
+
+5. **Webhook validation issues**
+   - Check webhook pod status: `kubectl get pods -l app.kubernetes.io/component=webhook`
+   - Review webhook logs: `kubectl logs -l app.kubernetes.io/component=webhook`
+   - Verify webhook configuration: `kubectl get validatingadmissionwebhook`
+   - Test user creation with detailed error messages
 
 ### Debug Mode
 

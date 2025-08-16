@@ -192,6 +192,25 @@ users:
   #     delete: false
   #     list: true
 
+# Webhook configuration for password validation
+webhook:
+  enabled: false
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  failurePolicy: Fail
+  validation:
+    passwordStrength:
+      enabled: true
+      minLength: 8
+      requireComplexity: true
+    production:
+      enabled: true
+      requireSecrets: true
+      secretNamingPattern: ".*-ftp-(password|credentials)$"
+    secrets:
+      validateExistence: true
+      validateKeyExists: true
+
 # Network policies
 networkPolicy:
   enabled: false
@@ -203,6 +222,17 @@ podDisruptionBudget:
   enabled: false
   minAvailable: 1
   # maxUnavailable: 1
+
+# Security configuration
+security:
+  passwordPolicy:
+    enforceStrong: true
+    minLength: 8
+    requireComplexity: true
+    forbidWeakPatterns: true
+  production:
+    forbidPlaintextPasswords: true
+    requireSecretNaming: true
 
 # Common labels and annotations
 commonLabels: {}

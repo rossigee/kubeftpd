@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -363,4 +364,117 @@ func TestKubeAuth_DeleteUser(t *testing.T) {
 	// Verify user is removed from cache
 	user = auth.GetUser("testuser")
 	assert.Nil(t, user)
+}
+
+func TestKubeAuth_SecretBasedPassword(t *testing.T) {
+	scheme := runtime.NewScheme()
+	err := ftpv1.AddToScheme(scheme)
+	assert.NoError(t, err)
+	err = corev1.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	// Create test secret
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-password-secret",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"password": []byte("secret123"),
+		},
+	}
+
+	// Create test user with secret reference
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testuser",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Username: "testuser",
+			PasswordSecret: &ftpv1.UserSecretRef{
+				Name: "test-password-secret",
+				Key:  "password",
+			},
+			Enabled: true,
+			Backend: ftpv1.BackendReference{
+				Kind: "MinioBackend",
+				Name: "test-backend",
+			},
+			HomeDirectory: "/test",
+			Permissions: ftpv1.UserPermissions{
+				Read:  true,
+				Write: true,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(secret, user).
+		Build()
+
+	auth := NewKubeAuth(fakeClient)
+
+	// Test authentication with correct password
+	authenticated, err := auth.CheckPasswd("testuser", "secret123")
+	assert.NoError(t, err)
+	assert.True(t, authenticated)
+
+	// Test authentication with wrong password
+	authenticated, err = auth.CheckPasswd("testuser", "wrongpass")
+	assert.NoError(t, err)
+	assert.False(t, authenticated)
+}
+
+func TestKubeAuth_SecretBasedPasswordCustomKey(t *testing.T) {
+	scheme := runtime.NewScheme()
+	err := ftpv1.AddToScheme(scheme)
+	assert.NoError(t, err)
+	err = corev1.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	// Create test secret with custom key
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-custom-secret",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"custom-password-key": []byte("customsecret456"),
+		},
+	}
+
+	// Create test user with secret reference using custom key
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testuser",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Username: "testuser",
+			PasswordSecret: &ftpv1.UserSecretRef{
+				Name: "test-custom-secret",
+				Key:  "custom-password-key",
+			},
+			Enabled: true,
+			Backend: ftpv1.BackendReference{
+				Kind: "MinioBackend",
+				Name: "test-backend",
+			},
+			HomeDirectory: "/test",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(secret, user).
+		Build()
+
+	auth := NewKubeAuth(fakeClient)
+
+	// Test authentication with correct password
+	authenticated, err := auth.CheckPasswd("testuser", "customsecret456")
+	assert.NoError(t, err)
+	assert.True(t, authenticated)
 }

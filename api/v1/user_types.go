@@ -30,9 +30,13 @@ type UserSpec struct {
 	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9_-]+$"
 	Username string `json:"username"`
 
-	// Password is the FTP password (should be stored in a Secret in production)
-	// +kubebuilder:validation:Required
-	Password string `json:"password"`
+	// Password is the FTP password (plaintext, not recommended for production)
+	// +optional
+	Password string `json:"password,omitempty"`
+
+	// PasswordSecret references a Kubernetes Secret containing the password
+	// +optional
+	PasswordSecret *UserSecretRef `json:"passwordSecret,omitempty"`
 
 	// Backend specifies which backend storage to use
 	// +kubebuilder:validation:Required
@@ -66,6 +70,21 @@ type BackendReference struct {
 	// Namespace of the backend resource (defaults to same namespace)
 	// +optional
 	Namespace *string `json:"namespace,omitempty"`
+}
+
+// UserSecretRef references a Kubernetes Secret for user password
+type UserSecretRef struct {
+	// Name of the secret
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the secret (defaults to same namespace as User)
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// Key is the key in the secret containing the password
+	// +kubebuilder:default="password"
+	Key string `json:"key,omitempty"`
 }
 
 // UserPermissions define what operations a user can perform

@@ -107,8 +107,12 @@ func (r *UserReconciler) validateUser(ctx context.Context, user *ftpv1.User) err
 	if user.Spec.Username == "" {
 		return fmt.Errorf("username is required")
 	}
-	if user.Spec.Password == "" {
-		return fmt.Errorf("password is required")
+	// Validate that either password or passwordSecret is provided
+	if user.Spec.Password == "" && user.Spec.PasswordSecret == nil {
+		return fmt.Errorf("either password or passwordSecret is required")
+	}
+	if user.Spec.Password != "" && user.Spec.PasswordSecret != nil {
+		return fmt.Errorf("cannot specify both password and passwordSecret")
 	}
 	if user.Spec.HomeDirectory == "" {
 		return fmt.Errorf("homeDirectory is required")

@@ -21,6 +21,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -96,6 +97,28 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	// Override flags with environment variables if set
+	if envFtpPort := os.Getenv("FTP_PORT"); envFtpPort != "" {
+		if port, err := strconv.Atoi(envFtpPort); err == nil {
+			ftpPort = port
+		} else {
+			setupLog.Error(err, "invalid FTP_PORT environment variable", "value", envFtpPort)
+			os.Exit(1)
+		}
+	}
+
+	// Handle passive port range from environment variables
+	if envFtpPasvPorts := os.Getenv("FTP_PASSIVE_PORTS"); envFtpPasvPorts != "" {
+		ftpPasvPorts = envFtpPasvPorts
+	} else {
+		// Build range from separate MIN/MAX environment variables if set
+		envMinPort := os.Getenv("FTP_PASSIVE_PORT_MIN")
+		envMaxPort := os.Getenv("FTP_PASSIVE_PORT_MAX")
+		if envMinPort != "" && envMaxPort != "" {
+			ftpPasvPorts = envMinPort + "-" + envMaxPort
+		}
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 

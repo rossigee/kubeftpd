@@ -5,6 +5,97 @@ All notable changes to KubeFTPd will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.1] - 2025-08-16
+
+### Added
+
+#### Password Security & Authentication
+- **Dual password authentication system**: Support for both plaintext passwords (development) and Kubernetes Secrets (production)
+- **Webhook validation system**: ValidatingAdmissionWebhook for User CRD validation
+- **Password strength enforcement**: Configurable password complexity requirements
+- **Production security restrictions**: Environment-based password policy enforcement
+- **Secret-based authentication**: Complete integration with Kubernetes Secret management
+- **Authentication metrics**: Prometheus metrics for login attempts and password retrieval performance
+
+#### Configuration & Deployment
+- **Configurable FTP port**: Environment variable support for non-root deployment (`FTP_PORT`)
+- **Enhanced environment variables**: Complete FTP server configuration via environment
+- **Helm chart enhancements**: Webhook configuration, security policies, flexible deployment options
+- **Security context improvements**: Non-root execution with configurable port binding
+
+#### Security Features  
+- **Production environment detection**: Automatic security policy enforcement for production namespaces
+- **Secret naming conventions**: Enforced naming patterns for production password secrets
+- **Webhook validation**: Real-time validation of User CRD with security compliance
+- **Password pattern detection**: Prevention of weak passwords with common patterns
+
+#### Testing & Quality
+- **Comprehensive test coverage**: Unit, integration, and E2E tests for all authentication methods
+- **Webhook validation tests**: Complete test suite for admission controller functionality
+- **E2E secret authentication**: End-to-end testing of secret-based user authentication
+- **Authentication metrics testing**: Validation of monitoring and observability features
+
+### Changed
+
+#### Breaking Changes
+- **User CRD**: Added `passwordSecret` field as alternative to `password` field
+- **Mutual exclusivity**: Users must specify either `password` OR `passwordSecret`, not both
+- **Production restrictions**: Production environments require secret-based passwords
+
+#### Configuration Updates
+- **Environment variables**: Added `FTP_WELCOME_MESSAGE`, `FTP_IDLE_TIMEOUT`, `FTP_MAX_CONNECTIONS`
+- **Helm values**: New webhook and security configuration sections
+- **Documentation**: Comprehensive updates with security best practices
+
+### Security Enhancements
+
+#### Vulnerability Mitigations
+- **Weak password prevention**: Automated detection and rejection of common weak patterns
+- **Production compliance**: Enforced secret-based authentication in production environments
+- **Password complexity**: Configurable strength requirements (length, complexity, patterns)
+- **Secret validation**: Real-time validation of secret existence and accessibility
+
+#### Monitoring & Observability
+- **Authentication metrics**: `kubeftpd_authentication_attempts_total`, `kubeftpd_password_retrieval_duration_seconds`
+- **Security logging**: Enhanced structured logging for authentication events
+- **Webhook monitoring**: Health checks and validation metrics for admission controllers
+
+### Deployment Options
+
+#### Non-Root Deployment
+```bash
+# Example: Deploy on port 2121 for non-root execution
+helm install kubeftpd kubeftpd/kubeftpd \
+  --set ftp.service.port=2121 \
+  --set webhook.enabled=true
+```
+
+#### Production Security
+```bash
+# Label production namespace
+kubectl label namespace production environment=production
+
+# Production-compliant user with secret
+kubectl create secret generic user-ftp-password --from-literal=password="MySecure123!"
+```
+
+### Migration Guide
+
+#### From v0.1.0 to v0.1.1
+1. **Existing users continue to work** - no breaking changes for existing deployments
+2. **Optional webhook deployment** - enable with `--set webhook.enabled=true`
+3. **Production upgrade path**:
+   ```bash
+   # Convert existing users to secrets
+   kubectl create secret generic user-ftp-password --from-literal=password="$(kubectl get user myuser -o jsonpath='{.spec.password}')"
+   
+   # Update user to use secret
+   kubectl patch user myuser --type='json' -p='[
+     {"op": "remove", "path": "/spec/password"},
+     {"op": "add", "path": "/spec/passwordSecret", "value": {"name": "user-ftp-password", "key": "password"}}
+   ]'
+   ```
+
 ## [v0.1.0] - 2025-08-16
 
 ### Added
@@ -159,4 +250,5 @@ Initial release developed by the KubeFTPd team.
 
 ---
 
+[v0.1.1]: https://github.com/rossigee/kubeftpd/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/rossigee/kubeftpd/releases/tag/v0.1.0

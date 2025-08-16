@@ -2,13 +2,52 @@ package ftp
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
+)
+
+var (
+	// Prometheus metrics for password security monitoring
+	authAttempts = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "kubeftpd_auth_attempts_total",
+			Help: "Total number of FTP authentication attempts",
+		},
+		[]string{"username", "method", "result"},
+	)
+
+	authFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "kubeftpd_auth_failures_total",
+			Help: "Total number of FTP authentication failures",
+		},
+		[]string{"username", "reason"},
+	)
+
+	secretAccessErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "kubeftpd_secret_access_errors_total",
+			Help: "Total number of secret access errors",
+		},
+		[]string{"namespace", "secret_name", "error_type"},
+	)
+
+	userSecretMissing = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "kubeftpd_user_secret_missing",
+			Help: "Users with missing password secrets",
+		},
+		[]string{"namespace", "username", "secret_name"},
+	)
 )
 
 // KubeAuth implements FTP authentication against Kubernetes User CRDs
@@ -33,17 +72,31 @@ func (auth *KubeAuth) CheckPasswd(username, password string) (bool, error) {
 	// First try to get from cache
 	if cachedUser, ok := auth.userCache.Load(username); ok {
 		user := cachedUser.(*ftpv1.User)
-		if user.Spec.Enabled && user.Spec.Password == password {
-			log.Printf("User %s authenticated from cache", username)
-			auth.setLastAuthUser(username)
-			return true, nil
-		}
 		if !user.Spec.Enabled {
 			log.Printf("User %s is disabled", username)
 			return false, nil
 		}
-		if user.Spec.Password != password {
+
+		userPassword, err := auth.getUserPassword(user)
+		if err != nil {
+			log.Printf("Failed to get password for user %s: %v", username, err)
+			return false, nil
+		}
+
+		if userPassword == password {
+			log.Printf("User %s authenticated from cache", username)
+			auth.setLastAuthUser(username)
+			// Record successful authentication
+			method := "plaintext"
+			if user.Spec.PasswordSecret != nil {
+				method = "secret"
+			}
+			authAttempts.WithLabelValues(username, method, "success").Inc()
+			return true, nil
+		} else {
 			log.Printf("Invalid password for user %s", username)
+			authFailures.WithLabelValues(username, "invalid_password").Inc()
+			authAttempts.WithLabelValues(username, "unknown", "failure").Inc()
 			return false, nil
 		}
 	}
@@ -61,19 +114,25 @@ func (auth *KubeAuth) CheckPasswd(username, password string) (bool, error) {
 			userCopy := user.DeepCopy()
 			auth.userCache.Store(username, userCopy)
 
-			if user.Spec.Enabled && user.Spec.Password == password {
-				log.Printf("User %s authenticated successfully", username)
-				auth.setLastAuthUser(username)
-				return true, nil
-			}
-
 			if !user.Spec.Enabled {
 				log.Printf("User %s is disabled", username)
 				return false, nil
 			}
 
-			log.Printf("Invalid password for user %s", username)
-			return false, nil
+			userPassword, err := auth.getUserPassword(userCopy)
+			if err != nil {
+				log.Printf("Failed to get password for user %s: %v", username, err)
+				return false, nil
+			}
+
+			if userPassword == password {
+				log.Printf("User %s authenticated successfully", username)
+				auth.setLastAuthUser(username)
+				return true, nil
+			} else {
+				log.Printf("Invalid password for user %s", username)
+				return false, nil
+			}
 		}
 	}
 
@@ -176,4 +235,61 @@ func (auth *KubeAuth) GetLastAuthUser() string {
 	auth.lastAuthUserLock.RLock()
 	defer auth.lastAuthUserLock.RUnlock()
 	return auth.lastAuthUser
+}
+
+// getUserPassword retrieves the user's password from either direct field or secret
+func (auth *KubeAuth) getUserPassword(user *ftpv1.User) (string, error) {
+	// If plaintext password is provided, use it
+	if user.Spec.Password != "" {
+		return user.Spec.Password, nil
+	}
+
+	// If secret reference is provided, retrieve from secret
+	if user.Spec.PasswordSecret != nil {
+		return auth.getPasswordFromSecret(user.Spec.PasswordSecret, user.Namespace)
+	}
+
+	return "", fmt.Errorf("no password or passwordSecret specified for user %s", user.Spec.Username)
+}
+
+// getPasswordFromSecret retrieves password from a Kubernetes Secret
+func (auth *KubeAuth) getPasswordFromSecret(secretRef *ftpv1.UserSecretRef, userNamespace string) (string, error) {
+	if secretRef == nil {
+		return "", fmt.Errorf("secret reference is nil")
+	}
+
+	ctx := context.TODO()
+	secretNamespace := userNamespace
+	if secretRef.Namespace != nil && *secretRef.Namespace != "" {
+		secretNamespace = *secretRef.Namespace
+	}
+
+	secret := &corev1.Secret{}
+	err := auth.client.Get(ctx, client.ObjectKey{
+		Name:      secretRef.Name,
+		Namespace: secretNamespace,
+	}, secret)
+	if err != nil {
+		// Record secret access error
+		secretAccessErrors.WithLabelValues(secretNamespace, secretRef.Name, "not_found").Inc()
+		userSecretMissing.WithLabelValues(secretNamespace, "unknown", secretRef.Name).Set(1)
+		return "", fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretRef.Name, err)
+	}
+
+	passwordKey := secretRef.Key
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+
+	passwordBytes, exists := secret.Data[passwordKey]
+	if !exists {
+		// Record secret key error
+		secretAccessErrors.WithLabelValues(secretNamespace, secretRef.Name, "key_not_found").Inc()
+		return "", fmt.Errorf("password not found in secret with key %s", passwordKey)
+	}
+
+	// Clear the missing secret metric since we found it
+	userSecretMissing.WithLabelValues(secretNamespace, "unknown", secretRef.Name).Set(0)
+
+	return string(passwordBytes), nil
 }
