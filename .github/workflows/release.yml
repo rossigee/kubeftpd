@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -62,7 +62,7 @@ jobs:
       image-tags: ${{ steps.meta.outputs.tags }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -91,7 +91,7 @@ jobs:
 
     - name: Build and push Docker image
       id: build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: ./Dockerfile
@@ -112,7 +112,7 @@ jobs:
       packages: write
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -165,7 +165,7 @@ jobs:
         fi
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
@@ -178,7 +178,7 @@ jobs:
           dist/binaries/*
 
     - name: Update Docker Hub description
-      uses: peter-evans/dockerhub-description@v3
+      uses: peter-evans/dockerhub-description@v4
       if: github.ref_name == 'main'
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -195,7 +195,7 @@ jobs:
     if: github.ref_name != 'main' && !contains(github.ref_name, 'alpha')
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Configure kubectl
       run: |
@@ -257,7 +257,7 @@ jobs:
     if: github.ref_name == 'main' || startsWith(github.ref_name, 'v')
     steps:
     - name: Checkout chart repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: ${{ github.repository }}-charts
         token: ${{ secrets.CHART_REPO_TOKEN }}
