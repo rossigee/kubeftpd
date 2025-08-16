@@ -1,0 +1,64 @@
+{{- if .Values.users.admin.enabled }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-admin-credentials
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+type: Opaque
+data:
+  password: {{ .Values.users.admin.password | b64enc }}
+---
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-admin
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+spec:
+  username: {{ .Values.users.admin.username | quote }}
+  passwordSecret:
+    name: {{ include "kubeftpd.fullname" . }}-admin-credentials
+    key: password
+  homeDirectory: {{ .Values.users.admin.homeDirectory | quote }}
+  backend:
+    kind: {{ .Values.users.admin.backend.kind | quote }}
+    name: {{ .Values.users.admin.backend.name | quote }}
+  permissions:
+    {{- toYaml .Values.users.admin.permissions | nindent 4 }}
+{{- end }}
+{{- range .Values.users.additional }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "kubeftpd.fullname" $ }}-{{ .name }}-credentials
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+type: Opaque
+data:
+  password: {{ .password | b64enc }}
+---
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: {{ include "kubeftpd.fullname" $ }}-{{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+spec:
+  username: {{ .username | quote }}
+  passwordSecret:
+    name: {{ include "kubeftpd.fullname" $ }}-{{ .name }}-credentials
+    key: password
+  homeDirectory: {{ .homeDirectory | quote }}
+  backend:
+    kind: {{ .backend.kind | quote }}
+    name: {{ .backend.name | quote }}
+  permissions:
+    {{- toYaml .permissions | nindent 4 }}
+{{- end }}

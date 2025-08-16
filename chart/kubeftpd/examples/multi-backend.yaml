@@ -1,0 +1,205 @@
+# Multi-backend example
+# This demonstrates using multiple storage backends simultaneously
+
+backends:
+  # Filesystem backend for general file storage
+  filesystem:
+    enabled: true
+    instances:
+      - name: local-files
+        basePath: /data/files
+        readOnly: false
+        maxFileSize: 1073741824  # 1GB
+        pvc:
+          enabled: true
+          name: kubeftpd-files-storage
+          size: 20Gi
+          storageClass: "fast-ssd"
+          accessModes:
+            - ReadWriteOnce
+      
+      - name: archive-storage
+        basePath: /data/archive
+        readOnly: true  # Read-only archive
+        pvc:
+          enabled: true
+          name: kubeftpd-archive-storage
+          size: 100Gi
+          storageClass: "standard"
+          accessModes:
+            - ReadWriteOnce
+
+  # MinIO backend for object storage
+  minio:
+    enabled: true
+    instances:
+      - name: minio-uploads
+        endpoint: minio.storage.svc.cluster.local:9000
+        bucket: ftp-uploads
+        region: us-west-2
+        useSSL: false
+        credentials:
+          secretName: minio-upload-credentials
+      
+      - name: minio-backup
+        endpoint: backup-minio.storage.svc.cluster.local:9000
+        bucket: ftp-backups
+        region: us-east-1
+        useSSL: true
+        credentials:
+          secretName: minio-backup-credentials
+
+  # WebDAV backend for legacy integration
+  webdav:
+    enabled: true
+    instances:
+      - name: legacy-webdav
+        baseURL: https://legacy-storage.company.com/webdav
+        credentials:
+          secretName: webdav-legacy-credentials
+          usernameKey: username
+          passwordKey: password
+
+users:
+  admin:
+    enabled: true
+    username: "admin"
+    password: "admin-secure-password"
+    homeDirectory: "/admin"
+    backend:
+      kind: "FilesystemBackend"
+      name: "local-files"
+    permissions:
+      read: true
+      write: true
+      delete: true
+      list: true
+
+  additional:
+    # User for general file operations
+    - name: file-user
+      username: "fileuser"
+      password: "file-user-password"
+      homeDirectory: "/files"
+      backend:
+        kind: "FilesystemBackend"
+        name: "local-files"
+      permissions:
+        read: true
+        write: true
+        delete: true
+        list: true
+    
+    # User for archive access (read-only)
+    - name: archive-reader
+      username: "archiver"
+      password: "archive-password"
+      homeDirectory: "/archive"
+      backend:
+        kind: "FilesystemBackend"
+        name: "archive-storage"
+      permissions:
+        read: true
+        write: false
+        delete: false
+        list: true
+    
+    # User for MinIO uploads
+    - name: upload-user
+      username: "uploader"
+      password: "upload-password"
+      homeDirectory: "/uploads"
+      backend:
+        kind: "MinioBackend"
+        name: "minio-uploads"
+      permissions:
+        read: true
+        write: true
+        delete: false
+        list: true
+    
+    # User for backup operations
+    - name: backup-user
+      username: "backup"
+      password: "backup-password"
+      homeDirectory: "/backups"
+      backend:
+        kind: "MinioBackend"
+        name: "minio-backup"
+      permissions:
+        read: true
+        write: true
+        delete: true
+        list: true
+    
+    # User for legacy system integration
+    - name: legacy-user
+      username: "legacy"
+      password: "legacy-password"
+      homeDirectory: "/legacy"
+      backend:
+        kind: "WebdavBackend"
+        name: "legacy-webdav"
+      permissions:
+        read: true
+        write: true
+        delete: false
+        list: true
+
+# Service configuration
+ftp:
+  service:
+    type: LoadBalancer
+    port: 21
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+  
+  passive:
+    enabled: true
+    service:
+      type: LoadBalancer
+      portRange:
+        min: 30000
+        max: 30050
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+
+  settings:
+    welcomeMessage: "Multi-Backend FTP Server - Choose your storage!"
+    idleTimeout: 300
+    maxConnections: 150
+
+# Controller configuration for handling multiple backends
+controller:
+  resources:
+    limits:
+      cpu: 800m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        team: "storage"
+
+# Enable monitoring for all backends
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8443
+
+# Labels for organization
+commonLabels:
+  environment: "staging"
+  storage-type: "multi-backend"
+  team: "storage-team"

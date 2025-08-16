@@ -1,0 +1,213 @@
+# Default values for kubeftpd.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  # Image registry for all components
+  imageRegistry: ""
+
+# KubeFTPd controller configuration
+controller:
+  # Controller image configuration
+  image:
+    registry: ghcr.io
+    repository: rossigee/kubeftpd
+    tag: "v0.1.0"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+  # Security context
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 65532
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Node selector and tolerations
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Service account configuration
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  # RBAC configuration
+  rbac:
+    create: true
+
+  # Leader election
+  leaderElection:
+    enabled: true
+
+  # Metrics configuration
+  metrics:
+    enabled: true
+    service:
+      port: 8443
+      annotations: {}
+    serviceMonitor:
+      enabled: false
+      additionalLabels: {}
+      interval: 30s
+      scrapeTimeout: 10s
+
+  # Health probes
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8081
+    initialDelaySeconds: 15
+    periodSeconds: 20
+
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: 8081
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# FTP Server configuration
+ftp:
+  # FTP service configuration
+  service:
+    type: LoadBalancer
+    port: 21
+    annotations: {}
+    loadBalancerIP: ""
+    loadBalancerSourceRanges: []
+
+  # Passive FTP configuration
+  passive:
+    enabled: true
+    service:
+      type: LoadBalancer
+      portRange:
+        min: 30000
+        max: 30100
+      annotations: {}
+      loadBalancerIP: ""
+      loadBalancerSourceRanges: []
+
+  # FTP server settings
+  settings:
+    welcomeMessage: "Welcome to KubeFTPd"
+    idleTimeout: 300
+    maxConnections: 100
+
+# Storage backends configuration
+backends:
+  # Filesystem backend configuration
+  filesystem:
+    enabled: false
+    instances: []
+    # Example:
+    # - name: local-storage
+    #   basePath: /data
+    #   readOnly: false
+    #   fileMode: "0644"
+    #   dirMode: "0755"
+    #   maxFileSize: 104857600  # 100MB
+    #   pvc:
+    #     enabled: true
+    #     name: kubeftpd-storage
+    #     size: 10Gi
+    #     storageClass: ""
+    #     accessModes:
+    #       - ReadWriteOnce
+
+  # MinIO backend configuration
+  minio:
+    enabled: false
+    instances: []
+    # Example:
+    # - name: minio-backend
+    #   endpoint: minio.default.svc.cluster.local:9000
+    #   bucket: ftp-data
+    #   region: us-east-1
+    #   useSSL: false
+    #   credentials:
+    #     secretName: minio-credentials
+    #     accessKeyKey: accessKey
+    #     secretKeyKey: secretKey
+
+  # WebDAV backend configuration
+  webdav:
+    enabled: false
+    instances: []
+    # Example:
+    # - name: webdav-backend
+    #   baseURL: https://webdav.example.com/dav
+    #   credentials:
+    #     secretName: webdav-credentials
+    #     usernameKey: username
+    #     passwordKey: password
+
+# Users configuration
+users:
+  # Default admin user
+  admin:
+    enabled: true
+    username: "admin"
+    password: "changeme"  # Change this in production!
+    homeDirectory: "/admin"
+    backend:
+      kind: "FilesystemBackend"
+      name: "default"
+    permissions:
+      read: true
+      write: true
+      delete: true
+      list: true
+
+  # Additional users
+  additional: []
+  # Example:
+  # - name: user1
+  #   username: "user1"
+  #   password: "password123"
+  #   homeDirectory: "/users/user1"
+  #   backend:
+  #     kind: "FilesystemBackend"
+  #     name: "local-storage"
+  #   permissions:
+  #     read: true
+  #     write: true
+  #     delete: false
+  #     list: true
+
+# Network policies
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Common labels and annotations
+commonLabels: {}
+commonAnnotations: {}
+
+# Full name override
+fullnameOverride: ""
+nameOverride: ""

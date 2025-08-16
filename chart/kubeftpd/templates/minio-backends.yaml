@@ -1,0 +1,23 @@
+{{- if .Values.backends.minio.enabled }}
+{{- range .Values.backends.minio.instances }}
+---
+apiVersion: ftp.golder.org/v1
+kind: MinioBackend
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+spec:
+  endpoint: {{ .endpoint | quote }}
+  bucket: {{ .bucket | quote }}
+  {{- if .region }}
+  region: {{ .region | quote }}
+  {{- end }}
+  useSSL: {{ .useSSL | default false }}
+  credentials:
+    secretName: {{ .credentials.secretName }}
+    accessKeyKey: {{ .credentials.accessKeyKey | default "accessKey" }}
+    secretKeyKey: {{ .credentials.secretKeyKey | default "secretKey" }}
+{{- end }}
+{{- end }}

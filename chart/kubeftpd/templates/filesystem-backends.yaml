@@ -1,0 +1,52 @@
+{{- if .Values.backends.filesystem.enabled }}
+{{- range .Values.backends.filesystem.instances }}
+---
+apiVersion: ftp.golder.org/v1
+kind: FilesystemBackend
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+spec:
+  basePath: {{ .basePath | quote }}
+  readOnly: {{ .readOnly | default false }}
+  {{- if .fileMode }}
+  fileMode: {{ .fileMode | quote }}
+  {{- end }}
+  {{- if .dirMode }}
+  dirMode: {{ .dirMode | quote }}
+  {{- end }}
+  {{- if .maxFileSize }}
+  maxFileSize: {{ .maxFileSize }}
+  {{- end }}
+  {{- if .pvc.enabled }}
+  volumeClaimRef:
+    name: {{ .pvc.name }}
+  {{- end }}
+{{- if .pvc.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .pvc.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+spec:
+  {{- if .pvc.accessModes }}
+  accessModes:
+    {{- toYaml .pvc.accessModes | nindent 4 }}
+  {{- else }}
+  accessModes:
+    - ReadWriteOnce
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .pvc.size }}
+  {{- if .pvc.storageClass }}
+  storageClassName: {{ .pvc.storageClass }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

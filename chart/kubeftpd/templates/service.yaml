@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-ftp-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ftp
+  {{- with .Values.ftp.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.ftp.service.type }}
+  {{- if .Values.ftp.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.ftp.service.loadBalancerIP }}
+  {{- end }}
+  {{- with .Values.ftp.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+  - port: {{ .Values.ftp.service.port }}
+    targetPort: ftp
+    protocol: TCP
+    name: ftp
+  selector:
+    {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+{{- if .Values.ftp.passive.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-passive-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ftp-passive
+  {{- with .Values.ftp.passive.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.ftp.passive.service.type }}
+  {{- if .Values.ftp.passive.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.ftp.passive.service.loadBalancerIP }}
+  {{- end }}
+  {{- with .Values.ftp.passive.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+  {{- range $port := untilStep (int .Values.ftp.passive.service.portRange.min) (int (add .Values.ftp.passive.service.portRange.max 1)) 1 }}
+  - port: {{ $port }}
+    targetPort: passive-{{ $port }}
+    protocol: TCP
+    name: passive-{{ $port }}
+  {{- end }}
+  selector:
+    {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+{{- end }}
+{{- if .Values.controller.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-metrics-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+  {{- with .Values.controller.metrics.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ports:
+  - name: https
+    port: {{ .Values.controller.metrics.service.port }}
+    protocol: TCP
+    targetPort: https
+  selector:
+    {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+{{- end }}

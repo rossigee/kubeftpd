@@ -1,0 +1,77 @@
+# Simple filesystem backend example
+# This creates a basic FTP server with local filesystem storage
+
+backends:
+  filesystem:
+    enabled: true
+    instances:
+      - name: local-storage
+        basePath: /data
+        readOnly: false
+        fileMode: "0644"
+        dirMode: "0755"
+        maxFileSize: 104857600  # 100MB
+        pvc:
+          enabled: true
+          name: kubeftpd-storage
+          size: 10Gi
+          accessModes:
+            - ReadWriteOnce
+
+users:
+  admin:
+    enabled: true
+    username: "admin"
+    password: "change-this-password"  # IMPORTANT: Change this!
+    homeDirectory: "/admin"
+    backend:
+      kind: "FilesystemBackend"
+      name: "local-storage"
+    permissions:
+      read: true
+      write: true
+      delete: true
+      list: true
+
+  additional:
+    - name: readonly-user
+      username: "guest"
+      password: "guest-password"
+      homeDirectory: "/guest"
+      backend:
+        kind: "FilesystemBackend"
+        name: "local-storage"
+      permissions:
+        read: true
+        write: false
+        delete: false
+        list: true
+
+# Use NodePort for easy testing (change to LoadBalancer for production)
+ftp:
+  service:
+    type: NodePort
+    port: 21
+  
+  passive:
+    enabled: true
+    service:
+      type: NodePort
+      portRange:
+        min: 30000
+        max: 30010
+
+# Enable metrics
+controller:
+  metrics:
+    enabled: true
+
+# Resource limits for small deployments
+controller:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi

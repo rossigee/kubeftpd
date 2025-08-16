@@ -1,0 +1,40 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kubeftpd.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+  policyTypes:
+  - Ingress
+  {{- if .Values.networkPolicy.egress }}
+  - Egress
+  {{- end }}
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 21
+    {{- if .Values.ftp.passive.enabled }}
+    {{- range $port := untilStep (int .Values.ftp.passive.service.portRange.min) (int (add .Values.ftp.passive.service.portRange.max 1)) 1 }}
+    - protocol: TCP
+      port: {{ $port }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.controller.metrics.enabled }}
+    - protocol: TCP
+      port: 8443
+    {{- end }}
+  {{- with .Values.networkPolicy.ingress }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+  {{- if .Values.networkPolicy.egress }}
+  egress:
+    {{- toYaml .Values.networkPolicy.egress | nindent 2 }}
+  {{- end }}
+{{- end }}
