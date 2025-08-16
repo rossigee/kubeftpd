@@ -1,0 +1,250 @@
+{{- if .Values.controller.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-manager-role
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - filesystembackends
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - filesystembackends/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - filesystembackends/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - miniobackends
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - miniobackends/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - miniobackends/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - users
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - users/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - users/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - webdavbackends
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - webdavbackends/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ftp.golder.org
+  resources:
+  - webdavbackends/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-manager-rolebinding
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kubeftpd.fullname" . }}-manager-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kubeftpd.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-leader-election-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-leader-election-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kubeftpd.fullname" . }}-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kubeftpd.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- if .Values.controller.metrics.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-metrics-reader
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+rules:
+- nonResourceURLs:
+  - "/metrics"
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-proxy-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-proxy-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "kubeftpd.fullname" . }}-proxy-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "kubeftpd.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

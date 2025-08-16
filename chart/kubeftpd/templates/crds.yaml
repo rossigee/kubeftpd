@@ -1,0 +1,9 @@
+{{- if .Values.controller.rbac.create }}
+{{ (.Files.Get "crd/bases/ftp.golder.org_filesystembackends.yaml") }}
+---
+{{ (.Files.Get "crd/bases/ftp.golder.org_miniobackends.yaml") }}
+---
+{{ (.Files.Get "crd/bases/ftp.golder.org_users.yaml") }}
+---
+{{ (.Files.Get "crd/bases/ftp.golder.org_webdavbackends.yaml") }}
+{{- end }}

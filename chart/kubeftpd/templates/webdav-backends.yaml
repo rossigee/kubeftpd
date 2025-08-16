@@ -1,0 +1,18 @@
+{{- if .Values.backends.webdav.enabled }}
+{{- range .Values.backends.webdav.instances }}
+---
+apiVersion: ftp.golder.org/v1
+kind: WebdavBackend
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+spec:
+  baseURL: {{ .baseURL | quote }}
+  credentials:
+    secretName: {{ .credentials.secretName }}
+    usernameKey: {{ .credentials.usernameKey | default "username" }}
+    passwordKey: {{ .credentials.passwordKey | default "password" }}
+{{- end }}
+{{- end }}

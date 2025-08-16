@@ -1,0 +1,195 @@
+# Production MinIO backend example
+# This creates a production-ready FTP server with MinIO S3 storage
+
+backends:
+  minio:
+    enabled: true
+    instances:
+      - name: production-minio
+        endpoint: minio.storage.svc.cluster.local:9000
+        bucket: ftp-production
+        region: us-east-1
+        useSSL: true
+        credentials:
+          secretName: minio-production-credentials
+          accessKeyKey: accessKey
+          secretKeyKey: secretKey
+
+users:
+  admin:
+    enabled: true
+    username: "admin"
+    password: "very-secure-admin-password"  # Use a strong password!
+    homeDirectory: "/admin"
+    backend:
+      kind: "MinioBackend"
+      name: "production-minio"
+    permissions:
+      read: true
+      write: true
+      delete: true
+      list: true
+
+  additional:
+    - name: app-upload
+      username: "app-uploader"
+      password: "app-upload-secure-password"
+      homeDirectory: "/uploads"
+      backend:
+        kind: "MinioBackend"
+        name: "production-minio"
+      permissions:
+        read: true
+        write: true
+        delete: false  # Apps can upload but not delete
+        list: true
+    
+    - name: backup-user
+      username: "backup"
+      password: "backup-secure-password"
+      homeDirectory: "/backups"
+      backend:
+        kind: "MinioBackend"
+        name: "production-minio"
+      permissions:
+        read: true
+        write: true
+        delete: true
+        list: true
+
+# Production service configuration
+ftp:
+  service:
+    type: LoadBalancer
+    port: 21
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    loadBalancerSourceRanges:
+      - "10.0.0.0/8"      # Internal networks only
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+  
+  passive:
+    enabled: true
+    service:
+      type: LoadBalancer
+      portRange:
+        min: 30000
+        max: 30100
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      loadBalancerSourceRanges:
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+
+  settings:
+    welcomeMessage: "Welcome to Production FTP Server"
+    idleTimeout: 600
+    maxConnections: 200
+
+# Production controller configuration
+controller:
+  image:
+    pullPolicy: Always  # Always pull latest for production
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Enable metrics and monitoring
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        prometheus: kube-prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+
+  # Health check configuration
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8081
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: 8081
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# High availability configuration
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network security
+networkPolicy:
+  enabled: true
+  ingress:
+    # Allow monitoring traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8443
+    # Allow FTP traffic from specific networks
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 21
+        - protocol: TCP
+          port: 30000
+        - protocol: TCP
+          port: 30100
+
+# Node placement
+controller:
+  nodeSelector:
+    node-type: "worker"
+  
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "ftp"
+      effect: "NoSchedule"
+  
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - kubeftpd
+            topologyKey: kubernetes.io/hostname
+
+# Common labels for organization
+commonLabels:
+  environment: "production"
+  team: "platform"
+  app: "ftp-server"
