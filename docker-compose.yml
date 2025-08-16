@@ -1,0 +1,179 @@
+version: '3.8'
+
+services:
+  # MinIO for S3-compatible storage backend
+  minio:
+    image: minio/minio:latest
+    container_name: kubeftpd-minio
+    ports:
+      - "9000:9000"      # MinIO API
+      - "9001:9001"      # MinIO Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - kubeftpd
+
+  # Create MinIO bucket for FTP storage
+  minio-setup:
+    image: minio/mc:latest
+    container_name: kubeftpd-minio-setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/ftp-storage --ignore-existing;
+      /usr/bin/mc policy set public myminio/ftp-storage;
+      echo 'MinIO setup complete';
+      "
+    networks:
+      - kubeftpd
+
+  # PostgreSQL for storing controller data (if needed)
+  postgres:
+    image: postgres:15-alpine
+    container_name: kubeftpd-postgres
+    environment:
+      POSTGRES_DB: kubeftpd
+      POSTGRES_USER: kubeftpd
+      POSTGRES_PASSWORD: kubeftpd123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kubeftpd"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - kubeftpd
+
+  # Kind Kubernetes cluster for local development
+  kind:
+    image: kindest/node:v1.28.0
+    container_name: kubeftpd-kind
+    privileged: true
+    ports:
+      - "6443:6443"      # Kubernetes API server
+    volumes:
+      - /var/lib/docker
+      - kind_data:/var/lib/containerd
+    networks:
+      - kubeftpd
+    profiles:
+      - k8s  # Optional profile for running with Kubernetes
+
+  # KubeFTPd development container
+  kubeftpd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kubeftpd-dev
+    ports:
+      - "21:21"          # FTP control port
+      - "30000-30100:30000-30100"  # FTP passive port range
+      - "8080:8080"      # Metrics
+      - "8081:8081"      # Health checks
+    environment:
+      # FTP Server Configuration
+      FTP_PORT: "21"
+      FTP_PASSIVE_PORT_MIN: "30000"
+      FTP_PASSIVE_PORT_MAX: "30100"
+      FTP_EXTERNAL_IP: "localhost"  # For passive mode
+      
+      # Logging Configuration
+      LOG_LEVEL: "debug"
+      LOG_FORMAT: "json"
+      
+      # Health and Metrics
+      METRICS_PORT: "8080"
+      HEALTH_PORT: "8081"
+      
+      # Backend Configuration (for testing without Kubernetes)
+      TEST_MODE: "true"
+      MINIO_ENDPOINT: "http://minio:9000"
+      MINIO_BUCKET: "ftp-storage"
+      MINIO_ACCESS_KEY: "minioadmin"
+      MINIO_SECRET_KEY: "minioadmin123"
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    volumes:
+      # Mount source code for development (remove for production)
+      - .:/workspace
+      # Mount logs directory
+      - ./logs:/var/log/kubeftpd
+    networks:
+      - kubeftpd
+    profiles:
+      - dev  # Development profile
+
+  # WebDAV server for testing WebDAV backend
+  webdav:
+    image: hacdias/webdav:latest
+    container_name: kubeftpd-webdav
+    ports:
+      - "8080:8080"
+    environment:
+      WEBDAV_USERS: |
+        - username: testuser
+          password: testpass
+          scope: /data
+          permissions:
+            - R
+            - W
+            - D
+    volumes:
+      - webdav_data:/data
+    networks:
+      - kubeftpd
+    profiles:
+      - webdav  # WebDAV testing profile
+
+  # FTP test client for automated testing
+  ftp-client:
+    image: alpine:latest
+    container_name: kubeftpd-ftp-client
+    command: >
+      sh -c "
+      apk add --no-cache lftp curl;
+      echo 'Waiting for KubeFTPd to start...';
+      sleep 30;
+      echo 'Testing FTP connection...';
+      lftp -e 'set ftp:passive-mode true; ls; quit' -u testuser,testpass ftp://kubeftpd:21 || true;
+      echo 'Testing health endpoint...';
+      curl -f http://kubeftpd:8081/healthz || true;
+      echo 'Testing metrics endpoint...';
+      curl -f http://kubeftpd:8080/metrics || true;
+      echo 'Test complete';
+      sleep infinity;
+      "
+    depends_on:
+      - kubeftpd
+    networks:
+      - kubeftpd
+    profiles:
+      - test  # Testing profile
+
+volumes:
+  minio_data:
+  postgres_data:
+  webdav_data:
+  kind_data:
+
+networks:
+  kubeftpd:
+    driver: bridge

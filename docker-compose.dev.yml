@@ -1,0 +1,88 @@
+# Development-focused docker-compose override
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  # Override KubeFTPd for development
+  kubeftpd:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        GO_VERSION: "1.25"
+    volumes:
+      # Mount source code for live development
+      - .:/workspace
+      - /workspace/bin  # Exclude bin directory
+      - go_mod_cache:/go/pkg/mod  # Cache Go modules
+    environment:
+      # Development environment variables
+      GO_ENV: "development"
+      LOG_LEVEL: "debug"
+      LOG_FORMAT: "text"  # More readable for development
+      FTP_EXTERNAL_IP: "host.docker.internal"  # For Docker Desktop
+      
+      # Enable development features
+      ENABLE_PPROF: "true"
+      PPROF_PORT: "6060"
+      
+      # Database for development (optional)
+      DATABASE_URL: "postgres://kubeftpd:kubeftpd123@postgres:5432/kubeftpd?sslmode=disable"
+    ports:
+      - "6060:6060"  # pprof debugging
+      - "40000:40000"  # Delve debugger (if needed)
+    command: >
+      sh -c "
+      echo 'Starting development environment...';
+      go mod download;
+      go run cmd/main.go;
+      "
+    profiles:
+      - dev
+
+  # Add Jaeger for tracing (development)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: kubeftpd-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger HTTP
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - kubeftpd
+    profiles:
+      - observability
+
+  # Add Prometheus for metrics (development)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kubeftpd-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./dev/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - kubeftpd
+    profiles:
+      - observability
+
+  # Add Grafana for visualization (development)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kubeftpd-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - kubeftpd
+    profiles:
+      - observability
+
+volumes:
+  go_mod_cache:
+  grafana_data:

@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        env:
+        - name: FTP_PORT
+          value: "21"
+        - name: FTP_PASSIVE_PORT_MIN
+          value: "30000"
+        - name: FTP_PASSIVE_PORT_MAX
+          value: "30100"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: LOG_FORMAT
+          value: "json"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: HEALTH_PORT
+          value: "8081"
+        - name: ENABLE_PPROF
+          value: "false"
+        # Production security settings
+        - name: DISABLE_HTTP2
+          value: "true"

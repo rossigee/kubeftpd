@@ -1,0 +1,28 @@
+# Prometheus configuration for KubeFTPd development
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # KubeFTPd metrics
+  - job_name: 'kubeftpd'
+    static_configs:
+      - targets: ['kubeftpd:8080']
+    scrape_interval: 5s
+    metrics_path: /metrics
+
+  # MinIO metrics
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['minio:9000']
+    scrape_interval: 15s
+    metrics_path: /minio/v2/metrics/cluster
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

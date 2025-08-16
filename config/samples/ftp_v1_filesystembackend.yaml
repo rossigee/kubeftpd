@@ -1,0 +1,62 @@
+apiVersion: ftp.golder.org/v1
+kind: FilesystemBackend
+metadata:
+  labels:
+    app.kubernetes.io/name: kubeftpd
+    app.kubernetes.io/managed-by: kustomize
+  name: filesystembackend-sample
+  namespace: kubeftpd-system
+spec:
+  # Base path where files will be stored
+  # This should be a mounted persistent volume
+  basePath: "/data/ftp"
+  
+  # Whether the filesystem should be read-only
+  readOnly: false
+  
+  # File permissions for new files (octal format)
+  fileMode: "0644"
+  
+  # Directory permissions for new directories (octal format)
+  dirMode: "0755"
+  
+  # Maximum file size in bytes (0 = no limit)
+  maxFileSize: 0
+  
+  # Optional reference to PersistentVolumeClaim
+  volumeClaimRef:
+    name: ftp-storage
+    # namespace: kubeftpd-system  # defaults to same namespace
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ftp-storage
+  namespace: kubeftpd-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: fast-ssd  # specify storage class if needed
+---
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  labels:
+    app.kubernetes.io/name: kubeftpd
+    app.kubernetes.io/managed-by: kustomize
+  name: user-filesystem-sample
+  namespace: kubeftpd-system
+spec:
+  username: "filesystemuser"
+  password: "secure-password-here"
+  homeDirectory: "/home/filesystemuser"
+  backend:
+    kind: FilesystemBackend
+    name: filesystembackend-sample
+  permissions:
+    read: true
+    write: true
+    delete: true

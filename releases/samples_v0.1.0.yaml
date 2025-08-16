@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ftp-storage
+  namespace: kubeftpd-system
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: ftp.golder.org/v1
+kind: FilesystemBackend
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubeftpd
+  name: filesystembackend-sample
+  namespace: kubeftpd-system
+spec:
+  basePath: /data/ftp
+  dirMode: "0755"
+  fileMode: "0644"
+  maxFileSize: 0
+  readOnly: false
+  volumeClaimRef:
+    name: ftp-storage
+---
+apiVersion: ftp.golder.org/v1
+kind: MinioBackend
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubeftpd
+  name: miniobackend-sample
+spec: null
+---
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubeftpd
+  name: user-filesystem-sample
+  namespace: kubeftpd-system
+spec:
+  backend:
+    kind: FilesystemBackend
+    name: filesystembackend-sample
+  homeDirectory: /home/filesystemuser
+  password: secure-password-here
+  permissions:
+    delete: true
+    read: true
+    write: true
+  username: filesystemuser
+---
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubeftpd
+  name: user-sample
+spec: null
+---
+apiVersion: ftp.golder.org/v1
+kind: WebDavBackend
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubeftpd
+  name: webdavbackend-sample
+spec: null
