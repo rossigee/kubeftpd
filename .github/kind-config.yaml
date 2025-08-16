@@ -1,0 +1,40 @@
+# Kind cluster configuration for E2E testing
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubeftpd-test
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"
+  extraPortMappings:
+  # FTP control port
+  - containerPort: 21
+    hostPort: 21
+    protocol: TCP
+  # FTP passive port range (limited for testing)
+  - containerPort: 30000
+    hostPort: 30000
+    protocol: TCP
+  - containerPort: 30001
+    hostPort: 30001
+    protocol: TCP
+  - containerPort: 30002
+    hostPort: 30002
+    protocol: TCP
+  - containerPort: 30003
+    hostPort: 30003
+    protocol: TCP
+  - containerPort: 30004
+    hostPort: 30004
+    protocol: TCP
+  # Health and metrics ports
+  - containerPort: 8080
+    hostPort: 8080
+    protocol: TCP
+  - containerPort: 8081
+    hostPort: 8081
+    protocol: TCP

@@ -1,0 +1,100 @@
+name: Feature Request
+description: Suggest an idea for KubeFTPd
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+assignees:
+  - rossigee
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature for KubeFTPd!
+
+  - type: dropdown
+    id: feature-type
+    attributes:
+      label: Feature Type
+      description: What type of feature are you requesting?
+      options:
+        - New FTP protocol support (FTPS, SFTP, etc.)
+        - New storage backend
+        - Authentication enhancement
+        - Performance improvement
+        - Security enhancement
+        - Developer experience
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: A clear and concise description of what you want to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered
+      placeholder: A clear and concise description of any alternative solutions or features you've considered.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Describe your use case and how this feature would help
+      placeholder: |
+        - Who would benefit from this feature?
+        - How would you use this feature?
+        - What problem does it solve for you?
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      description: Do you have any ideas for how this could be implemented?
+      placeholder: |
+        - Any technical considerations?
+        - Breaking changes?
+        - Configuration options needed?
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the feature request here.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be interested in contributing this feature?
+      options:
+        - label: I would be willing to contribute this feature
+        - label: I would be willing to help test this feature
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

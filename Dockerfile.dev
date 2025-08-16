@@ -1,0 +1,49 @@
+# Development Dockerfile for KubeFTPd
+# This Dockerfile is optimized for development with live reloading
+
+ARG GO_VERSION=1.25
+FROM golang:${GO_VERSION}-alpine AS development
+
+# Install development tools
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    curl \
+    make \
+    gcc \
+    musl-dev \
+    bash \
+    vim
+
+# Install Air for live reloading
+RUN go install github.com/cosmtrek/air@latest
+
+# Install Delve debugger
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Install golangci-lint
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
+
+# Install gosec
+RUN go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy go.mod and go.sum for dependency caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p /var/log/kubeftpd
+
+# Expose all necessary ports
+EXPOSE 21 30000-30100 8080 8081 6060 40000
+
+# Default command for development
+CMD ["air", "-c", ".air.toml"]

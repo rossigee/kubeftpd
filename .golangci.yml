@@ -1,0 +1,116 @@
+---
+run:
+  timeout: 10m
+  tests: true
+  skip-dirs:
+    - vendor
+    - bin
+    - dist
+    - hack
+  allow-parallel-runners: true
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+
+  gocyclo:
+    min-complexity: 15
+
+  goimports:
+    local-prefixes: github.com/rossigee/kubeftpd
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment  # Too strict for this project
+
+  lll:
+    line-length: 140
+
+  misspell:
+    locale: US
+
+  revive:
+    min-confidence: 0.8
+    rules:
+      - name: exported-function
+      - name: exported-type
+      - name: var-naming
+      - name: package-comments
+        disabled: true  # Not enforcing package comments
+
+  staticcheck:
+    checks: ["all"]
+
+  unused:
+    check-exported: false
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - dupl
+    - goconst
+    - gocyclo
+    - gofmt
+    - goimports
+    - misspell
+    - nakedret
+    - revive
+    - unconvert
+    - unparam
+    - typecheck
+  disable:
+    - exhaustive    # Too strict for this codebase
+
+issues:
+  exclude-rules:
+    # Exclude some lints for test files
+    - path: _test\.go
+      linters:
+        - dupl
+        - goconst
+        - lll
+
+    # Exclude some lints for generated files
+    - path: zz_generated\..*\.go
+      linters:
+        - gocritic
+        - unused
+
+    # Exclude some lints for controller files (kubebuilder generated patterns)
+    - path: internal/controller/
+      linters:
+        - lll
+        - dupl
+
+    # Exclude some lints for API files (kubebuilder generated patterns)
+    - path: api/
+      linters:
+        - lll
+
+  exclude:
+    # Standard kubebuilder excludes
+    - 'declaration of "err" shadows declaration at'
+    - 'should have a package comment'
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+severity:
+  default-severity: error

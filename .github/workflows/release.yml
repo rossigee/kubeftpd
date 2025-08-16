@@ -1,0 +1,288 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        default: 'v0.1.0'
+
+env:
+  GO_VERSION: '1.25'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Build and test before release
+  pre-release:
+    name: Pre-Release Validation
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run full test suite
+      run: |
+        go mod download
+        make test
+        make lint
+        make security-scan
+
+    - name: Validate manifests
+      run: make validate-manifests
+
+  # Build multi-platform Docker images
+  build-images:
+    name: Build Multi-Platform Images
+    runs-on: ubuntu-latest
+    needs: pre-release
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=tag
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Create GitHub release with assets
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build-images
+    permissions:
+      contents: write
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Install kubebuilder
+      run: |
+        curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
+        chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+
+    - name: Generate release manifests
+      run: |
+        make manifests
+        mkdir -p dist
+        # Generate CRDs
+        cat config/crd/bases/*.yaml > dist/crds.yaml
+        # Generate complete deployment manifest
+        cd config/manager && kustomize edit set image controller=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        kustomize build config/default > dist/kubeftpd.yaml
+
+    - name: Build release binaries
+      run: |
+        mkdir -p dist/binaries
+        # Build for multiple platforms
+        GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o dist/binaries/kubeftpd-linux-amd64 cmd/main.go
+        GOOS=linux GOARCH=arm64 go build -ldflags="-w -s" -o dist/binaries/kubeftpd-linux-arm64 cmd/main.go
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-w -s" -o dist/binaries/kubeftpd-darwin-amd64 cmd/main.go
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-w -s" -o dist/binaries/kubeftpd-darwin-arm64 cmd/main.go
+        GOOS=windows GOARCH=amd64 go build -ldflags="-w -s" -o dist/binaries/kubeftpd-windows-amd64.exe cmd/main.go
+
+    - name: Create checksums
+      run: |
+        cd dist/binaries
+        sha256sum * > checksums.txt
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        if git describe --tags --abbrev=0 HEAD~1 >/dev/null 2>&1; then
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1)
+          echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          echo "## Changes since $PREVIOUS_TAG" > CHANGELOG.md
+          git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
+        else
+          echo "## Initial Release" > CHANGELOG.md
+          echo "First release of KubeFTPd" >> CHANGELOG.md
+        fi
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+        files: |
+          dist/crds.yaml
+          dist/kubeftpd.yaml
+          dist/binaries/*
+
+    - name: Update Docker Hub description
+      uses: peter-evans/dockerhub-description@v3
+      if: github.ref_name == 'main'
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        repository: ${{ env.IMAGE_NAME }}
+        short-description: "Kubernetes-native FTP service with CRD-based user and backend management"
+
+  # Deploy to staging environment (if configured)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-images, release]
+    environment: staging
+    if: github.ref_name != 'main' && !contains(github.ref_name, 'alpha')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure kubectl
+      run: |
+        echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Deploy to staging
+      run: |
+        export KUBECONFIG=kubeconfig
+        # Update image tag in kustomization
+        cd config/manager
+        kustomize edit set image controller=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        kustomize build ../default | kubectl apply -f -
+        kubectl rollout status deployment/kubeftpd-controller-manager -n kubeftpd-system --timeout=300s
+
+    - name: Run smoke tests
+      run: |
+        export KUBECONFIG=kubeconfig
+        # Wait for service to be ready
+        kubectl wait --for=condition=available deployment/kubeftpd-controller-manager -n kubeftpd-system --timeout=300s
+        # Run basic health check
+        kubectl port-forward -n kubeftpd-system svc/kubeftpd-controller-manager-metrics-service 8080:8080 &
+        sleep 10
+        curl -f http://localhost:8080/metrics || exit 1
+
+  # Security scan of released image
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-images
+    steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run Cosign
+      uses: sigstore/cosign-installer@v3
+
+    - name: Sign container image
+      run: |
+        echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+        cosign sign --key cosign.key ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-images.outputs.image-digest }}
+      env:
+        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+  # Update Helm chart repository
+  update-helm-chart:
+    name: Update Helm Chart
+    runs-on: ubuntu-latest
+    needs: release
+    if: github.ref_name == 'main' || startsWith(github.ref_name, 'v')
+    steps:
+    - name: Checkout chart repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ github.repository }}-charts
+        token: ${{ secrets.CHART_REPO_TOKEN }}
+        path: charts
+
+    - name: Update chart version and image tag
+      run: |
+        cd charts
+        # Update Chart.yaml version
+        sed -i "s/version: .*/version: ${GITHUB_REF_NAME#v}/" charts/kubeftpd/Chart.yaml
+        sed -i "s/appVersion: .*/appVersion: \"${GITHUB_REF_NAME#v}\"/" charts/kubeftpd/Chart.yaml
+        # Update values.yaml image tag
+        sed -i "s/tag: .*/tag: \"$GITHUB_REF_NAME\"/" charts/kubeftpd/values.yaml
+
+    - name: Package and index Helm chart
+      run: |
+        cd charts
+        helm package charts/kubeftpd
+        helm repo index . --url https://github.com/${{ github.repository }}/releases/download/
+
+    - name: Commit and push changes
+      run: |
+        cd charts
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add .
+        git commit -m "Update chart to version $GITHUB_REF_NAME"
+        git push

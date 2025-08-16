@@ -1,0 +1,73 @@
+# More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
+
+# Build and output directories
+bin/
+tmp/
+dist/
+.git/
+
+# Documentation
+*.md
+docs/
+
+# Development files
+.air.toml
+docker-compose*.yml
+Dockerfile.dev
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test files and coverage
+*_test.go
+coverage.out
+coverage.html
+testdata/
+
+# Development scripts and examples
+scripts/
+examples/
+dev/
+
+# Dependencies (included via go.mod)
+vendor/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Configuration files for development
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.sqlite
+
+# Certificates and keys (if any)
+*.pem
+*.key
+*.crt
+*.p12
+
+# Backup files
+*.bak
+*.backup

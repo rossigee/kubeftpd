@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- ftp_v1_user.yaml
+- ftp_v1_miniobackend.yaml
+- ftp_v1_webdavbackend.yaml
+- ftp_v1_filesystembackend.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: kubeftpd
+    app.kubernetes.io/managed-by: kustomize
+    control-plane: controller-manager
+  name: ftp-service
+  namespace: system
+spec:
+  type: LoadBalancer
+  ports:
+  - name: ftp
+    port: 21
+    targetPort: 21
+    protocol: TCP
+  - name: ftp-passive-range
+    port: 30000
+    targetPort: 30000
+    protocol: TCP
+  selector:
+    control-plane: controller-manager
+    app.kubernetes.io/name: kubeftpd
+---
+# Service for passive port range (in production, use a range or multiple services)
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: kubeftpd
+    app.kubernetes.io/managed-by: kustomize
+    control-plane: controller-manager
+  name: ftp-passive-service
+  namespace: system
+spec:
+  type: LoadBalancer
+  ports:
+  - name: ftp-passive-30001
+    port: 30001
+    targetPort: 30001
+    protocol: TCP
+  - name: ftp-passive-30002
+    port: 30002
+    targetPort: 30002
+    protocol: TCP
+  - name: ftp-passive-30003
+    port: 30003
+    targetPort: 30003
+    protocol: TCP
+  - name: ftp-passive-30004
+    port: 30004
+    targetPort: 30004
+    protocol: TCP
+  - name: ftp-passive-30005
+    port: 30005
+    targetPort: 30005
+    protocol: TCP
+  # Note: In production, you would typically expose the full range 30000-30100
+  # This is a simplified example showing the pattern
+  selector:
+    control-plane: controller-manager
+    app.kubernetes.io/name: kubeftpd
