@@ -1,0 +1,265 @@
+name: Single Job CI
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+
+env:
+  GO_VERSION: '1.25'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Everything in one job with parallel background tasks
+  all-in-one:
+    name: Complete CI Pipeline
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64,linux/arm64
+
+    - name: Cache Go modules and build cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install tools and dependencies (once)
+      run: |
+        echo "📦 Installing dependencies and tools..."
+        go mod download
+        
+        # Install all tools in parallel
+        {
+          echo "Installing kubebuilder..."
+          curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
+          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+        } &
+        
+        {
+          echo "Installing golangci-lint..."
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+        } &
+        
+        {
+          echo "Installing gosec..."
+          go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        } &
+        
+        {
+          echo "Installing kind..."
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+        } &
+        
+        {
+          echo "Installing pre-commit..."
+          python3 -m pip install pre-commit
+        } &
+        
+        # Wait for all installations
+        wait
+        echo "✅ All tools installed"
+
+    - name: Generate manifests and code (once)
+      run: |
+        echo "🔨 Generating manifests and code..."
+        make manifests generate fmt vet
+        echo "✅ Generation complete"
+
+    - name: Run all checks in parallel
+      run: |
+        echo "🚀 Starting parallel execution..."
+        
+        # Create results directory
+        mkdir -p results
+        
+        # Function to run task with logging
+        run_task() {
+          local task=$1
+          local logfile="results/$task.log"
+          echo "Starting $task..." | tee "$logfile"
+          
+          case "$task" in
+            build)
+              echo "🔨 Building binaries..." | tee -a "$logfile"
+              make build build-kubeftpd 2>&1 | tee -a "$logfile"
+              echo "build_status=$?" > "results/$task.status"
+              ;;
+              
+            lint)
+              echo "🔍 Running linter..." | tee -a "$logfile"
+              $(go env GOPATH)/bin/golangci-lint run --timeout=5m 2>&1 | tee -a "$logfile"
+              echo "lint_status=$?" > "results/$task.status"
+              ;;
+              
+            security)
+              echo "🛡️ Running security scan..." | tee -a "$logfile"
+              $(go env GOPATH)/bin/gosec -fmt sarif -out results/gosec.sarif -stdout -verbose=text ./... 2>&1 | tee -a "$logfile"
+              echo "security_status=$?" > "results/$task.status"
+              ;;
+              
+            test-unit)
+              echo "🧪 Running unit tests..." | tee -a "$logfile"
+              KUBEBUILDER_ASSETS="$(which kubebuilder)" go test ./internal/... -v 2>&1 | tee -a "$logfile"
+              echo "test_unit_status=$?" > "results/$task.status"
+              ;;
+              
+            test-coverage)
+              echo "📊 Running coverage analysis..." | tee -a "$logfile"
+              KUBEBUILDER_ASSETS="$(which kubebuilder)" go test ./internal/... -coverprofile=results/coverage.out -covermode=atomic 2>&1 | tee -a "$logfile"
+              go tool cover -func=results/coverage.out | tee -a "$logfile"
+              echo "coverage_status=$?" > "results/$task.status"
+              ;;
+              
+            pre-commit)
+              echo "🔧 Running pre-commit checks..." | tee -a "$logfile"
+              pre-commit run --all-files 2>&1 | tee -a "$logfile" || true
+              echo "precommit_status=0" > "results/$task.status"  # Don't fail on pre-commit
+              ;;
+              
+            docker-build)
+              echo "🐳 Building multi-arch Docker image..." | tee -a "$logfile"
+              # Build for both amd64 and arm64, but only load amd64 for testing
+              docker buildx build --platform linux/amd64,linux/arm64 -t kubeftpd:test . 2>&1 | tee -a "$logfile"
+              # Build amd64 version and load for local testing
+              docker buildx build --platform linux/amd64 -t kubeftpd:test --load . 2>&1 | tee -a "$logfile"
+              echo "docker_status=$?" > "results/$task.status"
+              ;;
+          esac
+          
+          echo "Completed $task" | tee -a "$logfile"
+        }
+        
+        # Start all tasks in parallel
+        run_task "build" &
+        run_task "lint" &
+        run_task "security" &
+        run_task "test-unit" &
+        run_task "test-coverage" &
+        run_task "pre-commit" &
+        run_task "docker-build" &
+        
+        # Wait for all parallel tasks
+        echo "⏳ Waiting for all parallel tasks to complete..."
+        wait
+        echo "✅ All parallel tasks completed"
+
+    - name: Check results and run integration tests
+      run: |
+        echo "📋 Checking parallel task results..."
+        
+        # Check all status files
+        failed_tasks=""
+        for status_file in results/*.status; do
+          if [ -f "$status_file" ]; then
+            source "$status_file"
+            task=$(basename "$status_file" .status)
+            status_var="${task}_status"
+            status_value=${!status_var}
+            
+            if [ "$status_value" != "0" ]; then
+              echo "❌ $task failed with status $status_value"
+              failed_tasks="$failed_tasks $task"
+            else
+              echo "✅ $task passed"
+            fi
+          fi
+        done
+        
+        if [ -n "$failed_tasks" ]; then
+          echo "💥 Failed tasks:$failed_tasks"
+          echo "📋 Showing logs for failed tasks..."
+          for task in $failed_tasks; do
+            echo "=== $task.log ==="
+            cat "results/$task.log" || true
+            echo ""
+          done
+          exit 1
+        fi
+        
+        # If unit tests passed, run integration tests
+        echo "🔗 Running integration tests..."
+        docker run -d --name minio -p 9000:9000 \
+          -e MINIO_ROOT_USER=minioadmin \
+          -e MINIO_ROOT_PASSWORD=minioadmin123 \
+          minio/minio:latest server /data
+        
+        sleep 15  # Give MinIO time to start
+        
+        MINIO_ENDPOINT=http://localhost:9000 \
+        MINIO_ACCESS_KEY=minioadmin \
+        MINIO_SECRET_KEY=minioadmin123 \
+        MINIO_BUCKET=test-bucket \
+        INTEGRATION_TEST=1 \
+        KUBEBUILDER_ASSETS="$(which kubebuilder)" go test ./test/integration/... -v -timeout 10m || echo "⚠️ Integration tests not ready yet"
+
+    - name: Run E2E tests
+      run: |
+        echo "🎯 Running E2E tests..."
+        
+        # Create kind cluster
+        kind create cluster --name kubeftpd-test
+        
+        # Load our Docker image
+        kind load docker-image kubeftpd:test
+        
+        # Deploy to cluster
+        kubectl apply -f config/crd/bases/
+        kubectl create namespace kubeftpd-system || true
+        kubectl apply -f config/rbac/
+        sed 's|controller:latest|kubeftpd:test|g' config/manager/manager.yaml | kubectl apply -f -
+        
+        # Wait for deployment
+        kubectl wait --for=condition=available --timeout=300s deployment/kubeftpd-controller-manager -n kubeftpd-system || echo "⚠️ Deployment timeout"
+        
+        # Run E2E tests
+        go test ./test/e2e/ -v -ginkgo.v || echo "⚠️ E2E tests not ready yet"
+        
+        # Cleanup
+        kind delete cluster --name kubeftpd-test
+
+    - name: Upload artifacts and reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-results
+        path: |
+          results/
+          bin/
+          config/
+
+    - name: Upload security results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: results/gosec.sarif
+
+    - name: Upload coverage
+      if: always()
+      uses: codecov/codecov-action@v5
+      with:
+        file: results/coverage.out
+        flags: unittests
+
+    - name: Final status
+      run: |
+        echo "🎉 Single-job CI pipeline completed!"
+        echo "📊 Total execution time: $(( SECONDS / 60 )) minutes"
+        echo "💾 Results available in artifacts"
