@@ -28,6 +28,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	RegisterFailHandler(Fail)
 	setup()
 	code := m.Run()
 	teardown()
@@ -38,6 +39,12 @@ func setup() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
+
+	// Skip e2e tests if KUBEBUILDER_ASSETS is not set
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		fmt.Println("Skipping e2e tests: KUBEBUILDER_ASSETS not set")
+		os.Exit(0)
+	}
 
 	// bootstrapping test environment
 	testEnv = &envtest.Environment{

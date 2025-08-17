@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
+	"github.com/rossigee/kubeftpd/internal/metrics"
 )
 
 var (
@@ -92,11 +93,13 @@ func (auth *KubeAuth) CheckPasswd(username, password string) (bool, error) {
 				method = "secret"
 			}
 			authAttempts.WithLabelValues(username, method, "success").Inc()
+			metrics.RecordUserLogin(username, "success")
 			return true, nil
 		} else {
 			log.Printf("Invalid password for user %s", username)
 			authFailures.WithLabelValues(username, "invalid_password").Inc()
 			authAttempts.WithLabelValues(username, "unknown", "failure").Inc()
+			metrics.RecordUserLogin(username, "failure")
 			return false, nil
 		}
 	}
@@ -128,15 +131,18 @@ func (auth *KubeAuth) CheckPasswd(username, password string) (bool, error) {
 			if userPassword == password {
 				log.Printf("User %s authenticated successfully", username)
 				auth.setLastAuthUser(username)
+				metrics.RecordUserLogin(username, "success")
 				return true, nil
 			} else {
 				log.Printf("Invalid password for user %s", username)
+				metrics.RecordUserLogin(username, "failure")
 				return false, nil
 			}
 		}
 	}
 
 	log.Printf("User %s not found", username)
+	metrics.RecordUserLogin(username, "user_not_found")
 	return false, nil
 }
 

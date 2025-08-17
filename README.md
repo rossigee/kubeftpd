@@ -516,12 +516,29 @@ spec:
 
 Prometheus metrics available on `/metrics` endpoint (port 8080):
 
+**Connection & Session Metrics:**
 - `kubeftpd_active_connections` - Number of active FTP connections
-- `kubeftpd_user_logins_total` - Total user login attempts  
+- `kubeftpd_connections_total` - Total FTP connections (by username, client_ip)
+- `kubeftpd_connection_duration_seconds` - Duration of FTP connections (histogram)
+- `kubeftpd_user_session_duration_seconds` - Duration of user sessions (histogram)
+
+**Authentication Metrics:**
+- `kubeftpd_user_logins_total` - Total user login attempts (by username, result)
 - `kubeftpd_authentication_attempts_total` - Authentication attempts by method and result
 - `kubeftpd_password_retrieval_duration_seconds` - Password retrieval latency from secrets
-- `kubeftpd_backend_operations_total` - Backend operation counters
-- `kubeftpd_errors_total` - Error counters by type
+
+**File Operation Metrics:**
+- `kubeftpd_file_operations_total` - Total file operations (by username, operation, backend_type, result)
+- `kubeftpd_file_transfer_bytes_total` - Total bytes transferred (by username, direction, backend_type)
+- `kubeftpd_file_transfer_duration_seconds` - Duration of file transfers (histogram)
+
+**Backend Performance Metrics:**
+- `kubeftpd_backend_operations_total` - Backend operations (by backend_name, backend_type, operation, result)
+- `kubeftpd_backend_response_time_seconds` - Backend operation response times (histogram)
+
+**System Metrics:**
+- `kubeftpd_errors_total` - Error counters by type and component
+- `kubeftpd_config_reloads_total` - Configuration reload events
 
 ### Logging
 
