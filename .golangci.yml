@@ -1,4 +1,6 @@
 ---
+version: "2"
+
 run:
   timeout: 10m
   tests: true
@@ -9,7 +11,8 @@ run:
     - hack
 
 output:
-  format: colored-line-number
+  formats:
+    - format: colored-line-number
 
 linters-settings:
   errcheck:
@@ -47,6 +50,7 @@ linters-settings:
     check-exported: false
 
 linters:
+  default: none
   enable:
     - errcheck
     - gosimple
@@ -65,28 +69,27 @@ linters:
     - revive
     - unconvert
     - unparam
-  disable:
-    - exhaustive
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - goconst
+          - lll
+      - path: zz_generated\..*\.go
+        linters:
+          - gocritic
+          - unused
+      - path: internal/controller/
+        linters:
+          - lll
+          - dupl
+      - path: api/
+        linters:
+          - lll
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - dupl
-        - goconst
-        - lll
-    - path: zz_generated\..*\.go
-      linters:
-        - gocritic
-        - unused
-    - path: internal/controller/
-      linters:
-        - lll
-        - dupl
-    - path: api/
-      linters:
-        - lll
-
   exclude:
     - 'declaration of "err" shadows declaration at'
     - 'should have a package comment'
