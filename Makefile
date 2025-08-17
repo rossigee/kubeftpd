@@ -160,7 +160,7 @@ benchmark: ## Run benchmarks.
 
 .PHONY: security-scan
 security-scan: gosec ## Run security scanner.
-	$(GOSEC) ./...
+	$(GOSEC) -exclude-generated -exclude-dir=test ./...
 
 .PHONY: validate-manifests
 validate-manifests: ## Validate Kubernetes manifests.

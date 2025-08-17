@@ -139,7 +139,7 @@ func (r *FilesystemBackendReconciler) validateBackend(ctx context.Context, backe
 	if !backend.Spec.ReadOnly {
 		// Test write permissions by creating a temporary file
 		testFile := backend.Spec.BasePath + "/.kubeftpd-write-test"
-		file, err := os.Create(testFile)
+		file, err := os.Create(testFile) // nolint:gosec // File path is controlled by backend configuration
 		if err != nil {
 			return false, "Base path is not writable", nil
 		}
@@ -180,8 +180,21 @@ func (r *FilesystemBackendReconciler) getStorageStats(path string) (available in
 	}
 
 	// Calculate available and total space in bytes
-	available = int64(stat.Bavail) * int64(stat.Bsize)
-	total = int64(stat.Blocks) * int64(stat.Bsize)
+	// Use math.MaxInt64 to prevent potential overflow issues
+	const maxInt64 = 1<<63 - 1
+
+	// Calculate with overflow protection
+	if stat.Bavail > 0 && stat.Bsize > 0 && stat.Bavail <= maxInt64/uint64(stat.Bsize) {
+		available = int64(stat.Bavail) * int64(stat.Bsize) // nolint:gosec // Overflow protected
+	} else {
+		available = maxInt64 // Use max value if overflow would occur
+	}
+
+	if stat.Blocks > 0 && stat.Bsize > 0 && stat.Blocks <= maxInt64/uint64(stat.Bsize) {
+		total = int64(stat.Blocks) * int64(stat.Bsize) // nolint:gosec // Overflow protected
+	} else {
+		total = maxInt64 // Use max value if overflow would occur
+	}
 
 	return available, total
 }

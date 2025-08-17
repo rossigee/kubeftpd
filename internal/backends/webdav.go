@@ -46,7 +46,7 @@ func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client
 	// Configure TLS if specified
 	if backend.Spec.TLS != nil {
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify,
+			InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify, // nolint:gosec // InsecureSkipVerify is an intentional configuration option
 		}
 
 		// TODO: Add CA certificate support if backend.Spec.TLS.CACert is provided
