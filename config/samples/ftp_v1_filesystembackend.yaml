@@ -10,19 +10,19 @@ spec:
   # Base path where files will be stored
   # This should be a mounted persistent volume
   basePath: "/data/ftp"
-  
+
   # Whether the filesystem should be read-only
   readOnly: false
-  
+
   # File permissions for new files (octal format)
   fileMode: "0644"
-  
+
   # Directory permissions for new directories (octal format)
   dirMode: "0755"
-  
+
   # Maximum file size in bytes (0 = no limit)
   maxFileSize: 0
-  
+
   # Optional reference to PersistentVolumeClaim
   volumeClaimRef:
     name: ftp-storage

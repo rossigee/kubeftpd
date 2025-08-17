@@ -22,11 +22,11 @@ services:
       LOG_LEVEL: "debug"
       LOG_FORMAT: "text"  # More readable for development
       FTP_EXTERNAL_IP: "host.docker.internal"  # For Docker Desktop
-      
+
       # Enable development features
       ENABLE_PPROF: "true"
       PPROF_PORT: "6060"
-      
+
       # Database for development (optional)
       DATABASE_URL: "postgres://kubeftpd:kubeftpd123@postgres:5432/kubeftpd?sslmode=disable"
     ports:

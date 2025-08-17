@@ -214,28 +214,28 @@ var _ = Describe("Manager", Ordered, func() {
 				"--image=curlimages/curl:latest",
 				"--overrides",
 				fmt.Sprintf(`{
-					"spec": {
-						"containers": [{
-							"name": "curl",
-							"image": "curlimages/curl:latest",
-							"command": ["/bin/sh", "-c"],
-							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
-							"securityContext": {
-								"readOnlyRootFilesystem": true,
-								"allowPrivilegeEscalation": false,
-								"capabilities": {
-									"drop": ["ALL"]
-								},
-								"runAsNonRoot": true,
-								"runAsUser": 1000,
-								"seccompProfile": {
-									"type": "RuntimeDefault"
-								}
-							}
-						}],
-						"serviceAccountName": "%s"
-					}
-				}`, token, metricsServiceName, namespace, serviceAccountName))
+                    "spec": {
+                        "containers": [{
+                            "name": "curl",
+                            "image": "curlimages/curl:latest",
+                            "command": ["/bin/sh", "-c"],
+                            "args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
+                            "securityContext": {
+                                "readOnlyRootFilesystem": true,
+                                "allowPrivilegeEscalation": false,
+                                "capabilities": {
+                                    "drop": ["ALL"]
+                                },
+                                "runAsNonRoot": true,
+                                "runAsUser": 1000,
+                                "seccompProfile": {
+                                    "type": "RuntimeDefault"
+                                }
+                            }
+                        }],
+                        "serviceAccountName": "%s"
+                    }
+                }`, token, metricsServiceName, namespace, serviceAccountName))
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics pod")
 
@@ -385,9 +385,9 @@ spec:
 // and parsing the resulting token from the API response.
 func serviceAccountToken() (string, error) {
 	const tokenRequestRawString = `{
-		"apiVersion": "authentication.k8s.io/v1",
-		"kind": "TokenRequest"
-	}`
+        "apiVersion": "authentication.k8s.io/v1",
+        "kind": "TokenRequest"
+    }`
 
 	// Temporary file to store the token request
 	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
