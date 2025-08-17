@@ -143,8 +143,8 @@ func (r *FilesystemBackendReconciler) validateBackend(ctx context.Context, backe
 		if err != nil {
 			return false, "Base path is not writable", nil
 		}
-		file.Close()
-		os.Remove(testFile)
+		_ = file.Close()
+		_ = os.Remove(testFile)
 	}
 
 	// Validate referenced PVC if specified

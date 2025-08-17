@@ -62,7 +62,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		log.Println("Shutting down FTP server...")
-		listener.Close()
+		_ = listener.Close()
 	}()
 
 	log.Printf("FTP server listening on port %d", s.Port)
