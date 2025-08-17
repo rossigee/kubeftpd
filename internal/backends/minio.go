@@ -47,7 +47,7 @@ func newMinioBackendImpl(backend *ftpv1.MinioBackend, kubeClient client.Client) 
 	var transport *http.Transport
 	if backend.Spec.TLS != nil {
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify,
+			InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify, // nolint:gosec // InsecureSkipVerify is an intentional configuration option
 		}
 
 		// TODO: Add CA certificate support if backend.Spec.TLS.CACert is provided

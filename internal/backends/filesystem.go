@@ -187,7 +187,7 @@ func (f *filesystemBackendImpl) StatFile(filePath string) (*FileInfo, error) {
 func (f *filesystemBackendImpl) GetFile(filePath string, offset, length int64) (io.ReadCloser, error) {
 	fullPath := f.getFullPath(filePath)
 
-	file, err := os.Open(fullPath)
+	file, err := os.Open(fullPath) // nolint:gosec // File path is validated and controlled by backend
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
@@ -231,7 +231,7 @@ func (f *filesystemBackendImpl) PutFile(filePath string, reader io.Reader, size 
 
 	// Create temporary file first
 	tempPath := fullPath + ".tmp"
-	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode)
+	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode) // nolint:gosec // File path is validated and controlled by backend
 	if err != nil {
 		return fmt.Errorf("failed to create temporary file %s: %w", tempPath, err)
 	}
@@ -305,14 +305,14 @@ func (f *filesystemBackendImpl) CopyFile(srcPath, dstPath string, deleteSource b
 	}
 
 	// Open source file
-	srcFile, err := os.Open(srcFullPath)
+	srcFile, err := os.Open(srcFullPath) // nolint:gosec // File path is validated and controlled by backend
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer func() { _ = srcFile.Close() }()
 
 	// Create destination file
-	dstFile, err := os.OpenFile(dstFullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode)
+	dstFile, err := os.OpenFile(dstFullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode) // nolint:gosec // File path is validated and controlled by backend
 	if err != nil {
 		return fmt.Errorf("failed to create destination file: %w", err)
 	}
