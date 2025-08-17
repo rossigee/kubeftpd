@@ -10,9 +10,7 @@ run:
   allow-parallel-runners: true
 
 output:
-  formats:
-    - format: colored-line-number
-      path: stdout
+  format: colored-line-number
   print-issued-lines: true
   print-linter-name: true
 
