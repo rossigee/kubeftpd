@@ -74,6 +74,19 @@ spec:
                 description: Password is the FTP password (should be stored in a Secret
                   in production)
                 type: string
+              passwordSecret:
+                description: PasswordSecret references a secret containing the password
+                properties:
+                  key:
+                    description: Key within the secret containing the password
+                    type: string
+                  name:
+                    description: Name of the secret containing the password
+                    type: string
+                required:
+                - key
+                - name
+                type: object
               permissions:
                 description: Permissions define what the user can do
                 properties:
@@ -101,7 +114,6 @@ spec:
             required:
             - backend
             - homeDirectory
-            - password
             - username
             type: object
           status:
