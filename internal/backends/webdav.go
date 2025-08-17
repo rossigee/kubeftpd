@@ -69,7 +69,7 @@ func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to WebDAV server: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("WebDAV server returned error: %d %s", resp.StatusCode, resp.Status)
@@ -119,7 +119,7 @@ func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("PROPFIND request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
 		return nil, fmt.Errorf("file not found")
@@ -192,7 +192,7 @@ func (w *webDavBackendImpl) WriteFile(filePath string, reader io.Reader) (int64,
 	if err != nil {
 		return 0, fmt.Errorf("PUT request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return 0, fmt.Errorf("PUT failed with status: %d", resp.StatusCode)
@@ -217,7 +217,7 @@ func (w *webDavBackendImpl) Remove(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("DELETE request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("DELETE failed with status: %d", resp.StatusCode)
@@ -242,7 +242,7 @@ func (w *webDavBackendImpl) RemoveAll(dirPath string) error {
 	if err != nil {
 		return fmt.Errorf("DELETE request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("DELETE failed with status: %d", resp.StatusCode)
@@ -268,7 +268,7 @@ func (w *webDavBackendImpl) Rename(oldPath, newPath string) error {
 	if err != nil {
 		return fmt.Errorf("MOVE request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("MOVE failed with status: %d", resp.StatusCode)
@@ -292,7 +292,7 @@ func (w *webDavBackendImpl) Mkdir(dirPath string) error {
 	if err != nil {
 		return fmt.Errorf("MKCOL request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("MKCOL failed with status: %d", resp.StatusCode)
@@ -329,7 +329,7 @@ func (w *webDavBackendImpl) ReadDir(dirPath string) ([]*FileInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("PROPFIND request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("PROPFIND failed with status: %d", resp.StatusCode)
