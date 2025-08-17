@@ -1,3 +1,4 @@
+---
 # Simple filesystem backend example
 # This creates a basic FTP server with local filesystem storage
 
@@ -52,7 +53,7 @@ ftp:
   service:
     type: NodePort
     port: 21
-  
+
   passive:
     enabled: true
     service:
@@ -61,13 +62,10 @@ ftp:
         min: 30000
         max: 30010
 
-# Enable metrics
+# Enable metrics and resource limits
 controller:
   metrics:
     enabled: true
-
-# Resource limits for small deployments
-controller:
   resources:
     limits:
       cpu: 200m

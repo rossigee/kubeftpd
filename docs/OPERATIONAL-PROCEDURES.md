@@ -121,21 +121,21 @@ kubectl get secrets -n "${NAMESPACE}" \
   -o jsonpath='{.items[*].metadata.name}' | \
 while read SECRET_NAME; do
   echo "🔐 Rotating password for secret: ${SECRET_NAME}"
-  
+
   # Generate new password
   NEW_PASSWORD=$(openssl rand -base64 32)
-  
+
   # Update secret
   kubectl patch secret "${SECRET_NAME}" \
     -n "${NAMESPACE}" \
     --patch="{\"data\":{\"password\":\"$(echo -n ${NEW_PASSWORD} | base64)\"}}"
-  
+
   # Update rotation timestamp
   kubectl annotate secret "${SECRET_NAME}" \
     -n "${NAMESPACE}" \
     last-rotation="$(date -Iseconds)" \
     --overwrite
-  
+
   echo "✅ Rotated password for ${SECRET_NAME}"
   echo "🔑 New password: ${NEW_PASSWORD}"
   echo "📧 Please notify user to update their credentials"
@@ -175,25 +175,25 @@ kubectl annotate user "${USERNAME}" \
 #!/bin/bash
 while IFS=',' read -r username department backend permissions; do
   echo "Creating user: ${username}"
-  
+
   # Generate password
   PASSWORD=$(openssl rand -base64 32)
-  
+
   # Create secret
   kubectl create secret generic "${username}-ftp-password" \
     --from-literal=password="${PASSWORD}" \
     --namespace="ftp-users"
-  
+
   # Set permissions based on input
   case ${permissions} in
     "read-only")
       READ=true; WRITE=false; DELETE=false; LIST=true ;;
-    "read-write") 
+    "read-write")
       READ=true; WRITE=true; DELETE=false; LIST=true ;;
     "full")
       READ=true; WRITE=true; DELETE=true; LIST=true ;;
   esac
-  
+
   # Create user
   cat <<EOF | kubectl apply -f -
 apiVersion: ftp.golder.org/v1
@@ -255,7 +255,7 @@ echo ""
 # Check for missing secrets
 echo "## 🔍 Users with Missing Secrets"
 kubectl get users --all-namespaces -o json | \
-jq -r '.items[] | select(.spec.passwordSecret != null) | 
+jq -r '.items[] | select(.spec.passwordSecret != null) |
   "\(.metadata.namespace) \(.metadata.name) \(.spec.passwordSecret.name) \(.spec.passwordSecret.namespace // .metadata.namespace)"' | \
 while read user_ns user_name secret_name secret_ns; do
   if ! kubectl get secret "${secret_name}" -n "${secret_ns}" >/dev/null 2>&1; then
@@ -285,7 +285,7 @@ fi
 # Check for plaintext passwords in production
 PROD_PLAINTEXT=$(kubectl get users --all-namespaces -l environment=production -o json | \
   jq '[.items[] | select(.spec.password != null)] | length')
-  
+
 if [ "${PROD_PLAINTEXT}" -gt 0 ]; then
   echo "🚨 CRITICAL: ${PROD_PLAINTEXT} users have plaintext passwords in production"
 fi
@@ -293,7 +293,7 @@ fi
 # Check secret accessibility
 echo "🔍 Checking secret accessibility..."
 kubectl get users --all-namespaces -o json | \
-jq -r '.items[] | select(.spec.passwordSecret != null) | 
+jq -r '.items[] | select(.spec.passwordSecret != null) |
   "\(.metadata.namespace) \(.spec.passwordSecret.name) \(.spec.passwordSecret.namespace // .metadata.namespace)"' | \
 while read user_ns secret_name secret_ns; do
   if ! kubectl get secret "${secret_name}" -n "${secret_ns}" >/dev/null 2>&1; then
@@ -363,7 +363,7 @@ if [ -n "${SECRET_NAME}" ]; then
   echo "🔐 Updating password secret..."
   kubectl patch secret "${SECRET_NAME}" -n "${NAMESPACE}" \
     --patch="{\"data\":{\"password\":\"$(echo -n ${NEW_PASSWORD} | base64)\"}}"
-  
+
   kubectl annotate secret "${SECRET_NAME}" -n "${NAMESPACE}" \
     emergency-rotation="$(date -Iseconds)" \
     incident-id="${INCIDENT_ID:-$(uuidgen)}"
@@ -410,28 +410,28 @@ fi
 kubectl get users -n "${NAMESPACE}" -o name | while read USER_RESOURCE; do
   USER_NAME=$(echo "${USER_RESOURCE}" | cut -d'/' -f2)
   echo "🔄 Resetting password for ${USER_NAME}..."
-  
+
   # Generate new password
   NEW_PASSWORD=$(openssl rand -base64 32)
-  
+
   # Check if user uses secret
   SECRET_NAME=$(kubectl get "${USER_RESOURCE}" -n "${NAMESPACE}" \
     -o jsonpath='{.spec.passwordSecret.name}')
-  
+
   if [ -n "${SECRET_NAME}" ]; then
     # Update secret
     kubectl patch secret "${SECRET_NAME}" -n "${NAMESPACE}" \
       --patch="{\"data\":{\"password\":\"$(echo -n ${NEW_PASSWORD} | base64)\"}}"
-    
+
     echo "✅ ${USER_NAME}: ${NEW_PASSWORD}"
   else
     # User has plaintext password - update directly
     kubectl patch "${USER_RESOURCE}" -n "${NAMESPACE}" \
       --patch="{\"spec\":{\"password\":\"${NEW_PASSWORD}\"}}"
-    
+
     echo "✅ ${USER_NAME}: ${NEW_PASSWORD} (plaintext)"
   fi
-  
+
   # Add annotation
   kubectl annotate "${USER_RESOURCE}" -n "${NAMESPACE}" \
     mass-reset="$(date -Iseconds)" \
@@ -460,7 +460,7 @@ echo "Logs saved to /tmp/kubeftpd-weekly-logs.txt"
 # Check for users without recent activity
 echo "👤 Checking for inactive users..."
 kubectl get users --all-namespaces -o json | \
-jq -r '.items[] | select(.status.lastLogin != null) | 
+jq -r '.items[] | select(.status.lastLogin != null) |
   select((now - (.status.lastLogin | fromdateiso8601)) > (30 * 24 * 3600)) |
   "\(.metadata.namespace)/\(.metadata.name) - Last login: \(.status.lastLogin)"'
 
@@ -507,35 +507,35 @@ echo "🛡️ KubeFTPd Monthly Security Review - $(date)"
   echo "# Monthly Security Review"
   echo "Generated: $(date)"
   echo ""
-  
+
   echo "## User Statistics"
   echo "- Total users: $(kubectl get users --all-namespaces --no-headers | wc -l)"
   echo "- Active users: $(kubectl get users --all-namespaces -o jsonpath='{.items[?(@.spec.enabled==true)].metadata.name}' | wc -w)"
   echo "- Secret-based: $(kubectl get users --all-namespaces -o jsonpath='{.items[?(@.spec.passwordSecret)].metadata.name}' | wc -w)"
   echo "- Plaintext: $(kubectl get users --all-namespaces -o jsonpath='{.items[?(@.spec.password)].metadata.name}' | wc -w)"
   echo ""
-  
+
   echo "## Security Metrics (30 days)"
   echo "- Authentication attempts: $(kubectl logs -l app=kubeftpd --since=720h | grep -c "Authenticating user" || echo "0")"
   echo "- Authentication failures: $(kubectl logs -l app=kubeftpd --since=720h | grep -c "Invalid password" || echo "0")"
   echo "- Secret access errors: $(kubectl logs -l app=kubeftpd --since=720h | grep -c "failed to get secret" || echo "0")"
   echo ""
-  
+
   echo "## Compliance Issues"
   # Check for plaintext passwords in production
   kubectl get users --all-namespaces -o json | \
-  jq -r '.items[] | select(.spec.password != null) | 
-    select(.metadata.namespace as $ns | 
+  jq -r '.items[] | select(.spec.password != null) |
+    select(.metadata.namespace as $ns |
       (kubectl get namespace $ns -o jsonpath="{.metadata.labels.environment}" | test("prod"))) |
     "- Plaintext password in production: \(.metadata.namespace)/\(.metadata.name)"'
-  
+
   echo ""
   echo "## Recommendations"
   echo "- Migrate remaining plaintext passwords to secrets"
-  echo "- Review user permissions quarterly" 
+  echo "- Review user permissions quarterly"
   echo "- Update password rotation schedule"
   echo "- Review RBAC permissions"
-  
+
 } > "/tmp/kubeftpd-security-review-$(date +%Y-%m).md"
 
 echo "📊 Security review saved to /tmp/kubeftpd-security-review-$(date +%Y-%m).md"
@@ -577,7 +577,7 @@ echo "✅ Granular permissions (read/write/delete/list)"
   echo "Date: $(date)"
   echo "Auditor: ${USER}"
   echo ""
-  
+
   echo "## Controls Assessment"
   echo "| Control | Status | Notes |"
   echo "|---------|--------|-------|"
@@ -586,7 +586,7 @@ echo "✅ Granular permissions (read/write/delete/list)"
   echo "| Access Controls | ✅ PASS | RBAC limits secret access |"
   echo "| Audit Logging | ✅ PASS | Prometheus metrics track auth events |"
   echo "| User Management | ✅ PASS | Centralized user lifecycle |"
-  
+
 } > "/tmp/kubeftpd-soc2-$(date +%Y-%m-%d).md"
 
 echo "📄 Compliance report: /tmp/kubeftpd-soc2-$(date +%Y-%m-%d).md"

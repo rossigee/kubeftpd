@@ -164,7 +164,7 @@ users:
         write: false
         delete: false
         list: true
-    
+
     - name: upload-user
       username: "uploader"
       password: "upload-password"
@@ -190,7 +190,7 @@ ftp:
     loadBalancerIP: "203.0.113.10"
     annotations:
       service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-  
+
   passive:
     enabled: true
     service:
@@ -208,7 +208,7 @@ ftp:
   service:
     type: NodePort
     port: 21
-  
+
   passive:
     enabled: true
     service:
@@ -376,7 +376,7 @@ users:
     backend:
       kind: "MinioBackend"
       name: "production-minio"
-  
+
   additional:
     - name: app-upload
       username: "app-uploader"

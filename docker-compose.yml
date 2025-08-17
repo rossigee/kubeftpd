@@ -91,15 +91,15 @@ services:
       FTP_PASSIVE_PORT_MIN: "30000"
       FTP_PASSIVE_PORT_MAX: "30100"
       FTP_EXTERNAL_IP: "localhost"  # For passive mode
-      
+
       # Logging Configuration
       LOG_LEVEL: "debug"
       LOG_FORMAT: "json"
-      
+
       # Health and Metrics
       METRICS_PORT: "8080"
       HEALTH_PORT: "8081"
-      
+
       # Backend Configuration (for testing without Kubernetes)
       TEST_MODE: "true"
       MINIO_ENDPOINT: "http://minio:9000"

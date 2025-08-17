@@ -88,7 +88,7 @@ kubectl create secret generic user-ftp-password --from-literal=password="MySecur
    ```bash
    # Convert existing users to secrets
    kubectl create secret generic user-ftp-password --from-literal=password="$(kubectl get user myuser -o jsonpath='{.spec.password}')"
-   
+
    # Update user to use secret
    kubectl patch user myuser --type='json' -p='[
      {"op": "remove", "path": "/spec/password"},

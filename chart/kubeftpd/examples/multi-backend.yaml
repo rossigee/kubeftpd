@@ -17,7 +17,7 @@ backends:
           storageClass: "fast-ssd"
           accessModes:
             - ReadWriteOnce
-      
+
       - name: archive-storage
         basePath: /data/archive
         readOnly: true  # Read-only archive
@@ -40,7 +40,7 @@ backends:
         useSSL: false
         credentials:
           secretName: minio-upload-credentials
-      
+
       - name: minio-backup
         endpoint: backup-minio.storage.svc.cluster.local:9000
         bucket: ftp-backups
@@ -89,7 +89,7 @@ users:
         write: true
         delete: true
         list: true
-    
+
     # User for archive access (read-only)
     - name: archive-reader
       username: "archiver"
@@ -103,7 +103,7 @@ users:
         write: false
         delete: false
         list: true
-    
+
     # User for MinIO uploads
     - name: upload-user
       username: "uploader"
@@ -117,7 +117,7 @@ users:
         write: true
         delete: false
         list: true
-    
+
     # User for backup operations
     - name: backup-user
       username: "backup"
@@ -131,7 +131,7 @@ users:
         write: true
         delete: true
         list: true
-    
+
     # User for legacy system integration
     - name: legacy-user
       username: "legacy"
@@ -153,7 +153,7 @@ ftp:
     port: 21
     annotations:
       service.beta.kubernetes.io/aws-load-balancer-internal: "true"
-  
+
   passive:
     enabled: true
     service:
@@ -178,7 +178,7 @@ controller:
     requests:
       cpu: 200m
       memory: 256Mi
-  
+
   metrics:
     enabled: true
     serviceMonitor:
