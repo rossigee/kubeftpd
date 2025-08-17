@@ -1,3 +1,4 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -89,6 +90,12 @@ spec:
           {{- toYaml .Values.controller.resources | nindent 10 }}
         securityContext:
           {{- toYaml .Values.controller.securityContext | nindent 10 }}
+        volumeMounts:
+        - name: data-storage
+          mountPath: /data
+      volumes:
+      - name: data-storage
+        emptyDir: {}
       terminationGracePeriodSeconds: 10
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:
