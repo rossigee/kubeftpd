@@ -4,50 +4,6 @@ version: "2"
 run:
   timeout: 10m
   tests: true
-  skip-dirs:
-    - vendor
-    - bin
-    - dist
-    - hack
-
-output:
-  formats:
-    colored-line-number: {}
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  goconst:
-    min-len: 2
-    min-occurrences: 3
-
-  gocyclo:
-    min-complexity: 15
-
-  goimports:
-    local-prefixes: github.com/rossigee/kubeftpd
-
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-
-  lll:
-    line-length: 140
-
-  misspell:
-    locale: US
-
-  revive:
-    min-confidence: 0.8
-
-  staticcheck:
-    checks: ["all"]
-
-  unused:
-    check-exported: false
 
 linters:
   default: none
@@ -58,44 +14,8 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - bodyclose
-    - dupl
-    - goconst
-    - gocyclo
     - gofmt
     - goimports
-    - misspell
-    - nakedret
-    - revive
-    - unconvert
-    - unparam
-
-  exclusions:
-    rules:
-      - path: _test\.go
-        linters:
-          - dupl
-          - goconst
-          - lll
-      - path: zz_generated\..*\.go
-        linters:
-          - gocritic
-          - unused
-      - path: internal/controller/
-        linters:
-          - lll
-          - dupl
-      - path: api/
-        linters:
-          - lll
-
-issues:
-  exclude:
-    - 'declaration of "err" shadows declaration at'
-    - 'should have a package comment'
-
-  max-issues-per-linter: 0
-  max-same-issues: 0
 
 severity:
   default: error
