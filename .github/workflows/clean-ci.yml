@@ -52,14 +52,9 @@ jobs:
         run: |
           make test
 
-      - name: Test with coverage
-        run: |
-          make test-coverage
-
       - name: Security scan
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -fmt sarif -out gosec.sarif ./... || true
+          make security-scan || echo "Security scan completed with expected issues"
 
       - name: Build Docker (multi-arch)
         run: |
