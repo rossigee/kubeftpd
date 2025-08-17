@@ -45,7 +45,7 @@ spec:
         {{- end }}
         env:
         - name: FTP_PORT
-          value: {{ .Values.ftp.service.port | quote }}
+          value: {{ .Values.ftp.port | quote }}
         - name: FTP_PASSIVE_PORT_MIN
           value: {{ .Values.ftp.passive.service.portRange.min | quote }}
         - name: FTP_PASSIVE_PORT_MAX
@@ -63,7 +63,7 @@ spec:
         - name: HEALTH_PORT
           value: "8081"
         ports:
-        - containerPort: {{ .Values.ftp.service.port }}
+        - containerPort: {{ .Values.ftp.port }}
           name: ftp
           protocol: TCP
         {{- if .Values.ftp.passive.enabled }}
