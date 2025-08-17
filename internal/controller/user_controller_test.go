@@ -132,7 +132,7 @@ var _ = Describe("User Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should either requeue immediately (finalizer) or after delay (validation)
-			Expect(result.RequeueAfter > 0).To(BeTrue())
+			Expect(result.Requeue || result.RequeueAfter > 0).To(BeTrue())
 
 			// Verify the user resource exists and is valid
 			updatedUser := &ftpv1.User{}
@@ -257,7 +257,7 @@ func TestUserReconciler_Reconcile(t *testing.T) {
 			}
 
 			if tt.wantReq {
-				assert.True(t, result.RequeueAfter > 0)
+				assert.True(t, result.Requeue || result.RequeueAfter > 0)
 			}
 		})
 	}
