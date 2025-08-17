@@ -13,14 +13,16 @@ import (
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 	"github.com/rossigee/kubeftpd/internal/backends"
+	"github.com/rossigee/kubeftpd/internal/metrics"
 )
 
 // minioStorage implements Storage interface using MinIO backend
 type minioStorage struct {
-	user       *ftpv1.User
-	backend    backends.MinioBackend
-	basePath   string
-	currentDir string
+	user        *ftpv1.User
+	backend     backends.MinioBackend
+	basePath    string
+	currentDir  string
+	backendName string
 }
 
 // ChangeDir changes the current working directory
@@ -40,6 +42,7 @@ func (s *minioStorage) ChangeDir(dir string) error {
 
 // Stat returns file information for the given path
 func (s *minioStorage) Stat(filePath string) (server.FileInfo, error) {
+	start := time.Now()
 	fullPath := s.resolvePath(filePath)
 
 	// Try to get object info
@@ -47,10 +50,14 @@ func (s *minioStorage) Stat(filePath string) (server.FileInfo, error) {
 	if err != nil {
 		// Maybe it's a directory, try listing it
 		objects, err := s.backend.ListObjects(fullPath, false)
+		duration := time.Since(start)
+
 		if err != nil || len(objects) == 0 {
+			metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "error", duration)
 			return nil, fmt.Errorf("file not found: %s", filePath)
 		}
 
+		metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "success", duration)
 		// Return directory info
 		return &minioFileInfo{
 			name:    path.Base(filePath),
@@ -60,6 +67,9 @@ func (s *minioStorage) Stat(filePath string) (server.FileInfo, error) {
 			isDir:   true,
 		}, nil
 	}
+
+	duration := time.Since(start)
+	metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "success", duration)
 
 	return &minioFileInfo{
 		name:    path.Base(filePath),

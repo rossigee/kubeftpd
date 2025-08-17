@@ -64,10 +64,11 @@ func newMinioStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error
 	}
 
 	return &minioStorage{
-		user:       user,
-		backend:    minioBackend,
-		basePath:   user.Spec.HomeDirectory,
-		currentDir: user.Spec.HomeDirectory,
+		user:        user,
+		backend:     minioBackend,
+		basePath:    user.Spec.HomeDirectory,
+		currentDir:  user.Spec.HomeDirectory,
+		backendName: backendName,
 	}, nil
 }
 

@@ -26,12 +26,12 @@
 <!-- Describe what changes were made and why -->
 
 ### Code Changes
-- 
-- 
+-
+-
 
 ### Configuration Changes
-- 
-- 
+-
+-
 
 ## Testing
 
@@ -118,7 +118,7 @@
 
 ---
 
-<!-- 
+<!--
 By submitting this pull request, I confirm that:
 - I have read and agree to the project's contributing guidelines
 - I have tested my changes thoroughly

@@ -6,11 +6,13 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 
 	"github.com/goftp/server"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
+	"github.com/rossigee/kubeftpd/internal/metrics"
 	"github.com/rossigee/kubeftpd/internal/storage"
 )
 
@@ -111,13 +113,25 @@ type KubeDriver struct {
 	conn              *server.Conn
 	user              *ftpv1.User
 	storageImpl       storage.Storage
-	authenticatedUser string // Track the authenticated username
+	authenticatedUser string    // Track the authenticated username
+	sessionStart      time.Time // Track session start time
+	clientIP          string    // Track client IP
 }
 
 func (driver *KubeDriver) Init(conn *server.Conn) {
 	log.Printf("Initializing driver for connection")
 	// Store connection reference to get authenticated user later
 	driver.conn = conn
+	driver.sessionStart = time.Now()
+
+	// Extract client IP - use placeholder for now since RemoteAddr is not directly accessible
+	driver.clientIP = "unknown"
+
+	// Record connection metrics
+	username := driver.getAuthenticatedUsername()
+	if username != "" {
+		metrics.RecordConnection(username, driver.clientIP)
+	}
 }
 
 func (driver *KubeDriver) ChangeDir(path string) error {
@@ -178,18 +192,48 @@ func (driver *KubeDriver) MakeDir(path string) error {
 
 func (driver *KubeDriver) GetFile(path string, offset int64) (int64, io.ReadCloser, error) {
 	log.Printf("GetFile: %s (offset: %d)", path, offset)
+	start := time.Now()
+
 	if err := driver.ensureUserInitialized(); err != nil {
+		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
 		return 0, nil, err
 	}
-	return driver.storageImpl.GetFile(path, offset)
+
+	size, reader, err := driver.storageImpl.GetFile(path, offset)
+	duration := time.Since(start)
+
+	if err != nil {
+		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
+		return 0, nil, err
+	}
+
+	metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "success")
+	metrics.RecordFileTransfer(driver.authenticatedUser, "download", driver.getBackendType(), size, duration)
+
+	return size, reader, nil
 }
 
 func (driver *KubeDriver) PutFile(path string, reader io.Reader, append bool) (int64, error) {
 	log.Printf("PutFile: %s (append: %v)", path, append)
+	start := time.Now()
+
 	if err := driver.ensureUserInitialized(); err != nil {
+		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
 		return 0, err
 	}
-	return driver.storageImpl.PutFile(path, reader, append)
+
+	size, err := driver.storageImpl.PutFile(path, reader, append)
+	duration := time.Since(start)
+
+	if err != nil {
+		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
+		return 0, err
+	}
+
+	metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "success")
+	metrics.RecordFileTransfer(driver.authenticatedUser, "upload", driver.getBackendType(), size, duration)
+
+	return size, nil
 }
 
 // ensureUserInitialized ensures the driver has an authenticated user and storage configured
@@ -236,4 +280,22 @@ func (driver *KubeDriver) ensureUserInitialized() error {
 // getAuthenticatedUsername returns the authenticated username for this driver instance
 func (driver *KubeDriver) getAuthenticatedUsername() string {
 	return driver.authenticatedUser
+}
+
+// getBackendType returns the backend type for metrics
+func (driver *KubeDriver) getBackendType() string {
+	if driver.user != nil {
+		return driver.user.Spec.Backend.Kind
+	}
+	return "unknown"
+}
+
+// Close handles connection cleanup and metrics recording
+func (driver *KubeDriver) Close() error {
+	if driver.authenticatedUser != "" && !driver.sessionStart.IsZero() {
+		sessionDuration := time.Since(driver.sessionStart)
+		metrics.RecordConnectionClosed(driver.authenticatedUser, sessionDuration)
+		metrics.RecordUserSession(driver.authenticatedUser, sessionDuration)
+	}
+	return nil
 }
