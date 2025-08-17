@@ -13,6 +13,10 @@ jobs:
   ci:
     name: Build and Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     steps:
     - name: Checkout
       uses: actions/checkout@v5
@@ -66,10 +70,11 @@ jobs:
       uses: codecov/codecov-action@v5
       if: always()
       with:
-        file: ./coverage.out
+        files: ./coverage.out
+        fail_ci_if_error: false
 
     - name: Upload security results
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('gosec.sarif') != ''
       with:
         sarif_file: gosec.sarif
