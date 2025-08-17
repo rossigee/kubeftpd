@@ -346,7 +346,7 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 .PHONY: gosec
 gosec: $(GOSEC) ## Download gosec locally if necessary.
 $(GOSEC): $(LOCALBIN)
-	$(call go-install-tool,$(GOSEC),github.com/securecodewarrior/gosec/v2/cmd/gosec,$(GOSEC_VERSION))
+	$(call go-install-tool,$(GOSEC),github.com/securego/gosec/v2/cmd/gosec,$(GOSEC_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
