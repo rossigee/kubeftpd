@@ -39,7 +39,7 @@ spec:
         imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
         args:
         - --health-probe-bind-address=:8081
-        - --metrics-bind-address=127.0.0.1:8080
+        - --metrics-bind-address=:{{ .Values.controller.metrics.service.port }}
         {{- if .Values.controller.leaderElection.enabled }}
         - --leader-elect
         {{- end }}
@@ -76,6 +76,11 @@ spec:
         - containerPort: 8081
           name: health
           protocol: TCP
+        {{- if .Values.controller.metrics.enabled }}
+        - containerPort: {{ .Values.controller.metrics.service.port }}
+          name: metrics
+          protocol: TCP
+        {{- end }}
         livenessProbe:
           {{- toYaml .Values.controller.livenessProbe | nindent 10 }}
         readinessProbe:
@@ -84,31 +89,6 @@ spec:
           {{- toYaml .Values.controller.resources | nindent 10 }}
         securityContext:
           {{- toYaml .Values.controller.securityContext | nindent 10 }}
-      {{- if .Values.controller.metrics.enabled }}
-      - name: kube-rbac-proxy
-        image: gcr.io/kubebuilder/kube-rbac-proxy:v0.18.0
-        args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --v=0
-        ports:
-        - containerPort: 8443
-          name: https
-          protocol: TCP
-        resources:
-          limits:
-            cpu: 500m
-            memory: 128Mi
-          requests:
-            cpu: 5m
-            memory: 64Mi
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-      {{- end }}
       terminationGracePeriodSeconds: 10
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:

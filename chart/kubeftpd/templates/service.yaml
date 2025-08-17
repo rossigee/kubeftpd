@@ -77,10 +77,10 @@ metadata:
   {{- end }}
 spec:
   ports:
-  - name: https
+  - name: metrics
     port: {{ .Values.controller.metrics.service.port }}
     protocol: TCP
-    targetPort: https
+    targetPort: metrics
   selector:
     {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: manager

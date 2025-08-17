@@ -1,5 +1,11 @@
 # KubeFTPd
 
+[![Build Status](https://github.com/rossigee/kubeftpd/workflows/Clean%20CI/badge.svg)](https://github.com/rossigee/kubeftpd/actions/workflows/clean-ci.yml)
+[![codecov](https://codecov.io/gh/rossigee/kubeftpd/branch/master/graph/badge.svg)](https://codecov.io/gh/rossigee/kubeftpd)
+[![Go Report Card](https://goreportcard.com/badge/github.com/rossigee/kubeftpd)](https://goreportcard.com/report/github.com/rossigee/kubeftpd)
+[![Container Images](https://img.shields.io/badge/container-ghcr.io%2Frossigee%2Fkubeftpd-blue)](https://github.com/rossigee/kubeftpd/pkgs/container/kubeftpd)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 A Kubernetes-native FTP service that provides secure file transfer capabilities using Custom Resource Definitions (CRDs) for user and backend management.
 
 ## Overview
@@ -32,6 +38,22 @@ KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a clo
                        │  CRDs)           │
                        └──────────────────┘
 ```
+
+## Container Images
+
+Pre-built container images are available from GitHub Container Registry:
+
+```bash
+# Latest release
+ghcr.io/rossigee/kubeftpd:latest
+
+# Specific version
+ghcr.io/rossigee/kubeftpd:v0.2.4
+```
+
+**Supported architectures:**
+- `linux/amd64`
+- `linux/arm64`
 
 ## Quick Start
 
@@ -421,6 +443,7 @@ kubectl apply -f https://github.com/rossigee/kubeftpd/releases/latest/download/c
 ```bash
 helm repo add kubeftpd https://rossigee.github.io/kubeftpd
 helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system \
+  --set controller.image.tag=v0.2.4 \
   --set webhook.enabled=true \
   --set ftp.service.port=2121  # Example: non-root port
 ```

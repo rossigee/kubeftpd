@@ -60,7 +60,7 @@ controller:
   metrics:
     enabled: true
     service:
-      port: 8443
+      port: 8080
       annotations: {}
     serviceMonitor:
       enabled: false

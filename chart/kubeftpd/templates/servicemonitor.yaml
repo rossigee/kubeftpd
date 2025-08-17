@@ -11,14 +11,11 @@ metadata:
     {{- end }}
 spec:
   endpoints:
-  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-    interval: {{ .Values.controller.metrics.serviceMonitor.interval }}
+  - interval: {{ .Values.controller.metrics.serviceMonitor.interval }}
     path: /metrics
-    port: https
-    scheme: https
+    port: metrics
+    scheme: http
     scrapeTimeout: {{ .Values.controller.metrics.serviceMonitor.scrapeTimeout }}
-    tlsConfig:
-      insecureSkipVerify: true
   selector:
     matchLabels:
       {{- include "kubeftpd.selectorLabels" . | nindent 6 }}
