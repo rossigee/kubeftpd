@@ -21,8 +21,8 @@ import (
 
 func createTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
-	ftpv1.AddToScheme(scheme)
-	corev1.AddToScheme(scheme)
+	_ = ftpv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
 	return scheme
 }
 
@@ -30,7 +30,7 @@ func createTestDir(t *testing.T) string {
 	tmpDir, err := os.MkdirTemp("", "kubeftpd-controller-test-*")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 	})
 	return tmpDir
 }

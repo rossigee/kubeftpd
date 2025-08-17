@@ -23,7 +23,7 @@ type MockFilesystemBackend struct {
 func (m *MockFilesystemBackend) PutFile(filePath string, reader io.Reader, size int64) error {
 	// Consume the reader to simulate real behavior
 	if reader != nil {
-		io.Copy(io.Discard, reader)
+		_, _ = io.Copy(io.Discard, reader)
 	}
 	args := m.Called(filePath, reader, size)
 	return args.Error(0)
@@ -367,7 +367,7 @@ func TestFilesystemStorage_GetFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(testContent)), size)
 	assert.NotNil(t, gotReader)
-	defer gotReader.Close()
+	defer func() { _ = gotReader.Close() }()
 
 	// Read content to verify
 	content, err := io.ReadAll(gotReader)

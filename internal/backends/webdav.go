@@ -166,7 +166,7 @@ func (w *webDavBackendImpl) Open(filePath string) (io.ReadCloser, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("GET failed with status: %d", resp.StatusCode)
 	}
 

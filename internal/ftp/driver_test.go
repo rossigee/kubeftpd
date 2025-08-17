@@ -419,7 +419,7 @@ func TestKubeDriver_GetFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(testContent)), size)
 	assert.NotNil(t, gotReader)
-	defer gotReader.Close()
+	defer func() { _ = gotReader.Close() }()
 
 	// Read content to verify
 	content, err := io.ReadAll(gotReader)
