@@ -9,6 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -210,6 +211,8 @@ func (v *UserValidator) validateProductionRestrictions(ctx context.Context, user
 		if user.Spec.Permissions.Delete {
 			// Warn but don't block - log this for monitoring
 			// Could be made stricter based on requirements
+			logger := log.FromContext(ctx)
+			logger.Info("Production user has delete permissions - consider restricting for security", "user", user.Name)
 		}
 
 		// Require specific naming conventions for production secrets

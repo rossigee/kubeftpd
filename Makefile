@@ -97,8 +97,11 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 .PHONY: lint
-lint: ## Run Go linting tools
-	@echo "🔍 Running Go linting tools..."
+lint: lint-advanced ## Run comprehensive Go linting tools (now uses golangci-lint by default)
+
+.PHONY: lint-basic
+lint-basic: ## Run basic Go linting tools (gofmt, go vet, go mod tidy)
+	@echo "🔍 Running basic Go linting tools..."
 	@echo "📋 Checking formatting with gofmt..."
 	@if [ -n "$$(gofmt -l -s .)" ]; then \
 		echo "❌ Code is not properly formatted. Run 'make fmt' to fix:"; \
@@ -115,17 +118,8 @@ lint: ## Run Go linting tools
 	else \
 		echo "✅ go.mod is tidy"; \
 	fi
-	@echo "🔍 Checking for common issues..."
-	@echo "  - Checking for ineffectual assignments..."
-	@go list ./... | xargs go list -f '{{.Dir}}' | while read dir; do \
-		go list -f '{{.GoFiles}} {{.TestGoFiles}}' "$$dir" | tr ' ' '\n' | grep '\.go$$' | while read file; do \
-			if [ -f "$$dir/$$file" ]; then \
-				grep -n "_ =" "$$dir/$$file" | head -3; \
-			fi; \
-		done; \
-	done | head -10 || true
 	@echo "✅ Basic linting checks passed!"
-	@echo "💡 Note: For comprehensive linting, install golangci-lint built with Go 1.25+"
+	@echo "💡 Note: For comprehensive linting, run 'make lint' (uses golangci-lint)"
 
 .PHONY: lint-advanced
 lint-advanced: golangci-lint ## Run comprehensive linting with golangci-lint (requires Go 1.25+ compatible version)
@@ -315,7 +309,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.18.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v1.63.4
+GOLANGCI_LINT_VERSION ?= v2.4.0
 GOSEC_VERSION ?= v2.21.4
 
 .PHONY: kustomize
@@ -344,7 +338,10 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+	@[ -f "$(GOLANGCI_LINT)" ] || { \
+		echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION)" ;\
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(LOCALBIN) $(GOLANGCI_LINT_VERSION) ;\
+	}
 
 .PHONY: gosec
 gosec: $(GOSEC) ## Download gosec locally if necessary.
