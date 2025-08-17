@@ -7,12 +7,9 @@ run:
     - bin
     - dist
     - hack
-  allow-parallel-runners: true
 
 output:
   format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
 
 linters-settings:
   errcheck:
@@ -32,7 +29,7 @@ linters-settings:
   govet:
     enable-all: true
     disable:
-      - fieldalignment  # Too strict for this project
+      - fieldalignment
 
   lll:
     line-length: 140
@@ -42,12 +39,6 @@ linters-settings:
 
   revive:
     min-confidence: 0.8
-    rules:
-      - name: exported-function
-      - name: exported-type
-      - name: var-naming
-      - name: package-comments
-        disabled: true  # Not enforcing package comments
 
   staticcheck:
     checks: ["all"]
@@ -75,36 +66,28 @@ linters:
     - unconvert
     - unparam
   disable:
-    - exhaustive    # Too strict for this codebase
+    - exhaustive
 
 issues:
   exclude-rules:
-    # Exclude some lints for test files
     - path: _test\.go
       linters:
         - dupl
         - goconst
         - lll
-
-    # Exclude some lints for generated files
     - path: zz_generated\..*\.go
       linters:
         - gocritic
         - unused
-
-    # Exclude some lints for controller files (kubebuilder generated patterns)
     - path: internal/controller/
       linters:
         - lll
         - dupl
-
-    # Exclude some lints for API files (kubebuilder generated patterns)
     - path: api/
       linters:
         - lll
 
   exclude:
-    # Standard kubebuilder excludes
     - 'declaration of "err" shadows declaration at'
     - 'should have a package comment'
 
