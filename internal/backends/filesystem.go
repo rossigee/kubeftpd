@@ -197,7 +197,7 @@ func (f *filesystemBackendImpl) GetFile(filePath string, offset, length int64) (
 	if offset > 0 {
 		_, err = file.Seek(offset, io.SeekStart)
 		if err != nil {
-			file.Close()
+			_ = file.Close()
 			return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
 		}
 	}
@@ -240,16 +240,16 @@ func (f *filesystemBackendImpl) PutFile(filePath string, reader io.Reader, size 
 
 	// Copy data
 	_, err = io.Copy(file, reader)
-	file.Close()
+	_ = file.Close()
 
 	if err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to write file data: %w", err)
 	}
 
 	// Atomic rename
 	if err = os.Rename(tempPath, fullPath); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to finalize file %s: %w", filePath, err)
 	}
 
@@ -311,14 +311,14 @@ func (f *filesystemBackendImpl) CopyFile(srcPath, dstPath string, deleteSource b
 	if err != nil {
 		return fmt.Errorf("failed to open source file: %w", err)
 	}
-	defer srcFile.Close()
+	defer func() { _ = srcFile.Close() }()
 
 	// Create destination file
 	dstFile, err := os.OpenFile(dstFullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode)
 	if err != nil {
 		return fmt.Errorf("failed to create destination file: %w", err)
 	}
-	defer dstFile.Close()
+	defer func() { _ = dstFile.Close() }()
 
 	// Copy data
 	if _, err = io.Copy(dstFile, srcFile); err != nil {

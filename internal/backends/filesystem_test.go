@@ -19,7 +19,7 @@ func createTestDir(t *testing.T) string {
 	tmpDir, err := os.MkdirTemp("", "kubeftpd-filesystem-test-*")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 	})
 	return tmpDir
 }
@@ -201,7 +201,7 @@ func TestFilesystemBackend_GetFile(t *testing.T) {
 	reader, err := backend.GetFile("test.txt", 0, -1)
 	assert.NoError(t, err)
 	assert.NotNil(t, reader)
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	content, err := io.ReadAll(reader)
 	assert.NoError(t, err)
