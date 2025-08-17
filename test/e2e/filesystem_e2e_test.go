@@ -44,7 +44,7 @@ var _ = Describe("FilesystemBackend E2E Tests", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		DeferCleanup(func() {
-			os.RemoveAll(testDataPath)
+			_ = os.RemoveAll(testDataPath)
 		})
 	})
 
@@ -330,7 +330,7 @@ func testFilesystemFTPOperations(basePath string) {
 
 	client, err := goftp.DialConfig(ftpConfig, "localhost:21")
 	Expect(err).NotTo(HaveOccurred())
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	By("Testing directory listing")
 	entries, err := client.ReadDir("/")
@@ -419,7 +419,7 @@ func testReadOnlyFTPOperations() {
 
 	client, err := goftp.DialConfig(ftpConfig, "localhost:21")
 	Expect(err).NotTo(HaveOccurred())
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	By("Testing directory listing (should work)")
 	entries, err := client.ReadDir("/")
@@ -456,7 +456,7 @@ func cleanupFilesystemResources(ctx context.Context, namespace, backendName, use
 			Namespace: namespace,
 		},
 	}
-	k8sClient.Delete(ctx, user, &client.DeleteOptions{})
+	_ = k8sClient.Delete(ctx, user, &client.DeleteOptions{})
 
 	// Clean up FilesystemBackend
 	backend := &ftpv1.FilesystemBackend{
@@ -465,7 +465,7 @@ func cleanupFilesystemResources(ctx context.Context, namespace, backendName, use
 			Namespace: namespace,
 		},
 	}
-	k8sClient.Delete(ctx, backend, &client.DeleteOptions{})
+	_ = k8sClient.Delete(ctx, backend, &client.DeleteOptions{})
 
 	// Clean up PVC
 	pvc := &corev1.PersistentVolumeClaim{
@@ -474,5 +474,5 @@ func cleanupFilesystemResources(ctx context.Context, namespace, backendName, use
 			Namespace: namespace,
 		},
 	}
-	k8sClient.Delete(ctx, pvc, &client.DeleteOptions{})
+	_ = k8sClient.Delete(ctx, pvc, &client.DeleteOptions{})
 }

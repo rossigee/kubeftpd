@@ -58,7 +58,7 @@ func (r *FilesystemBackendReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// Check if the backend is being deleted
-	if !backend.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !backend.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx, &backend)
 	}
 

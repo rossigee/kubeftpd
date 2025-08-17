@@ -32,7 +32,7 @@ func (m *MockMinioBackend) GetObject(objectName string, offset, length int64) (i
 func (m *MockMinioBackend) PutObject(objectName string, reader io.Reader, size int64) error {
 	// Consume the reader to simulate real MinIO behavior
 	if reader != nil {
-		io.Copy(io.Discard, reader)
+		_, _ = io.Copy(io.Discard, reader)
 	}
 	args := m.Called(objectName, reader, size)
 	return args.Error(0)
@@ -303,7 +303,7 @@ func TestMinioStorage_GetFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1024), size)
 	assert.NotNil(t, gotReader)
-	defer gotReader.Close()
+	defer func() { _ = gotReader.Close() }()
 
 	// Read content to verify
 	content, err := io.ReadAll(gotReader)

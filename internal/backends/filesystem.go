@@ -84,9 +84,7 @@ func (f *filesystemBackendImpl) getFullPath(relativePath string) string {
 	cleanPath := filepath.Clean(relativePath)
 
 	// If the path starts with "/" treat it as relative to base (not absolute)
-	if strings.HasPrefix(cleanPath, "/") {
-		cleanPath = cleanPath[1:]
-	}
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
 
 	// Join with base path
 	fullPath := filepath.Join(f.basePath, cleanPath)
