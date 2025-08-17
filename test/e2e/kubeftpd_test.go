@@ -77,10 +77,10 @@ var _ = Describe("KubeFTPd E2E Tests", func() {
 	AfterEach(func() {
 		// Clean up resources
 		if testUser != nil {
-			k8sClient.Delete(ctx, testUser)
+			_ = k8sClient.Delete(ctx, testUser)
 		}
 		if minioBackend != nil {
-			k8sClient.Delete(ctx, minioBackend)
+			_ = k8sClient.Delete(ctx, minioBackend)
 		}
 	})
 
@@ -160,7 +160,7 @@ var _ = Describe("KubeFTPd E2E Tests", func() {
 			invalidUser.Spec.Backend.Name = "non-existent-backend"
 
 			Expect(k8sClient.Create(ctx, invalidUser)).To(Succeed())
-			defer k8sClient.Delete(ctx, invalidUser)
+			defer func() { _ = k8sClient.Delete(ctx, invalidUser) }()
 
 			By("Waiting for User to have error status")
 			Eventually(func() bool {
@@ -282,8 +282,8 @@ var _ = Describe("KubeFTPd E2E Tests", func() {
 			Expect(k8sClient.Create(ctx, backend2)).To(Succeed())
 
 			defer func() {
-				k8sClient.Delete(ctx, backend1)
-				k8sClient.Delete(ctx, backend2)
+				_ = k8sClient.Delete(ctx, backend1)
+				_ = k8sClient.Delete(ctx, backend2)
 			}()
 
 			By("Creating users with different backends")
@@ -301,8 +301,8 @@ var _ = Describe("KubeFTPd E2E Tests", func() {
 			Expect(k8sClient.Create(ctx, user2)).To(Succeed())
 
 			defer func() {
-				k8sClient.Delete(ctx, user1)
-				k8sClient.Delete(ctx, user2)
+				_ = k8sClient.Delete(ctx, user1)
+				_ = k8sClient.Delete(ctx, user2)
 			}()
 
 			By("Verifying both users become ready")
