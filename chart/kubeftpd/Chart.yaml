@@ -4,7 +4,7 @@ name: kubeftpd
 description: A Kubernetes-native FTP server with multiple storage backend support
 type: application
 version: 0.1.6
-appVersion: "v0.2.5"
+appVersion: "v0.2.6"
 keywords:
   - ftp
   - kubernetes

@@ -49,7 +49,7 @@ Pre-built container images are available from GitHub Container Registry:
 ghcr.io/rossigee/kubeftpd:latest
 
 # Specific version
-ghcr.io/rossigee/kubeftpd:v0.2.5
+ghcr.io/rossigee/kubeftpd:v0.2.6
 ```
 
 **Supported architectures:**
@@ -514,7 +514,7 @@ kubectl apply -f https://github.com/rossigee/kubeftpd/releases/latest/download/c
 ```bash
 helm repo add kubeftpd https://rossigee.github.io/kubeftpd
 helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system \
-  --set controller.image.tag=v0.2.5 \
+  --set controller.image.tag=v0.2.6 \
   --set webhook.enabled=true \
   --set ftp.service.port=2121  # Example: non-root port
 ```
