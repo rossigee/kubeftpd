@@ -1,3 +1,4 @@
+---
 # Default values for kubeftpd.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
@@ -13,7 +14,7 @@ controller:
   image:
     registry: ghcr.io
     repository: rossigee/kubeftpd
-    tag: "v0.3.0"
+    tag: "v0.4.0"
     pullPolicy: IfNotPresent
     pullSecrets: []
 
@@ -51,10 +52,6 @@ controller:
   # RBAC configuration
   rbac:
     create: true
-
-  # Leader election
-  leaderElection:
-    enabled: true
 
   # HTTP server configuration (metrics, health, status)
   http:

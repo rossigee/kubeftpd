@@ -40,12 +40,9 @@ spec:
         imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
         args:
         - --http-bind-address=:{{ .Values.controller.http.service.port }}
-        {{- if .Values.controller.leaderElection.enabled }}
-        - --leader-elect
-        {{- end }}
         env:
         - name: FTP_PORT
-          value: {{ .Values.ftp.port | quote }}
+          value: {{ .Values.ftp.service.port | quote }}
         - name: FTP_PASSIVE_PORT_MIN
           value: {{ .Values.ftp.passive.service.portRange.min | quote }}
         - name: FTP_PASSIVE_PORT_MAX
@@ -61,7 +58,7 @@ spec:
           value: "8080"
         {{- end }}
         ports:
-        - containerPort: {{ .Values.ftp.port }}
+        - containerPort: {{ .Values.ftp.service.port }}
           name: ftp
           protocol: TCP
         {{- if .Values.ftp.passive.enabled }}
