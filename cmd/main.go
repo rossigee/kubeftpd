@@ -49,7 +49,7 @@ import (
 
 var (
 	// Version information - set during build
-	version = "v0.3.0"
+	version = "v0.3.1"
 	commit  = "unknown"
 	date    = "unknown"
 
@@ -64,105 +64,113 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// nolint:gocyclo
-func main() {
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var webhookCertPath, webhookCertName, webhookCertKey string
-	var enableLeaderElection bool
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var tlsOpts []func(*tls.Config)
-	var ftpPort int
-	var ftpPasvPorts string
-	flag.StringVar(&metricsAddr, "http-bind-address", ":8080", "The address the HTTP server binds to (serves metrics, health, and status). "+
+type appConfig struct {
+	metricsAddr          string
+	metricsCertPath      string
+	metricsCertName      string
+	metricsCertKey       string
+	webhookCertPath      string
+	webhookCertName      string
+	webhookCertKey       string
+	enableLeaderElection bool
+	secureMetrics        bool
+	enableHTTP2          bool
+	ftpPort              int
+	ftpPasvPorts         string
+}
+
+func parseFlags() (*appConfig, zap.Options) {
+	config := &appConfig{}
+	flag.StringVar(&config.metricsAddr, "http-bind-address", ":8080", "The address the HTTP server binds to (serves metrics, health, and status). "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the HTTP server.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flag.BoolVar(&config.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+	flag.BoolVar(&config.secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
-	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
+	flag.StringVar(&config.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	flag.StringVar(&config.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	flag.StringVar(&config.webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	flag.StringVar(&config.metricsCertPath, "metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
-	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false,
+	flag.StringVar(&config.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&config.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.BoolVar(&config.enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.IntVar(&ftpPort, "ftp-port", 21, "The port on which the FTP server listens")
-	flag.StringVar(&ftpPasvPorts, "ftp-pasv-ports", "30000-31000", "The range of ports for FTP passive mode")
-	opts := zap.Options{
-		Development: true,
-	}
+	flag.IntVar(&config.ftpPort, "ftp-port", 21, "The port on which the FTP server listens")
+	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "30000-31000", "The range of ports for FTP passive mode")
+
+	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	// Override flags with environment variables if set
+	return config, opts
+}
+
+func processEnvironmentOverrides(config *appConfig) {
 	if envFtpPort := os.Getenv("FTP_PORT"); envFtpPort != "" {
 		if port, err := strconv.Atoi(envFtpPort); err == nil {
-			ftpPort = port
+			config.ftpPort = port
 		} else {
 			setupLog.Error(err, "invalid FTP_PORT environment variable", "value", envFtpPort)
 			os.Exit(1)
 		}
 	}
 
-	// Handle passive port range from environment variables
 	if envFtpPasvPorts := os.Getenv("FTP_PASSIVE_PORTS"); envFtpPasvPorts != "" {
-		ftpPasvPorts = envFtpPasvPorts
+		config.ftpPasvPorts = envFtpPasvPorts
 	} else {
-		// Build range from separate MIN/MAX environment variables if set
 		envMinPort := os.Getenv("FTP_PASSIVE_PORT_MIN")
 		envMaxPort := os.Getenv("FTP_PASSIVE_PORT_MAX")
 		if envMinPort != "" && envMaxPort != "" {
-			ftpPasvPorts = envMinPort + "-" + envMaxPort
+			config.ftpPasvPorts = envMinPort + "-" + envMaxPort
 		}
 	}
+}
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	// Log version information
-	setupLog.Info("Starting KubeFTPd", "version", version, "commit", commit, "date", date)
-
-	// if the enable-http2 flag is false (the default), http/2 should be disabled
-	// due to its vulnerabilities. More specifically, disabling http/2 will
-	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
-	// Rapid Reset CVEs. For more information see:
-	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
-	// - https://github.com/advisories/GHSA-4374-p667-p6c8
-	disableHTTP2 := func(c *tls.Config) {
-		setupLog.Info("disabling http/2")
-		c.NextProtos = []string{"http/1.1"}
-	}
+func setupTLSOptions(enableHTTP2 bool) []func(*tls.Config) {
+	var tlsOpts []func(*tls.Config)
 
 	if !enableHTTP2 {
+		disableHTTP2 := func(c *tls.Config) {
+			setupLog.Info("disabling http/2")
+			c.NextProtos = []string{"http/1.1"}
+		}
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	// Create watchers for metrics and webhooks certificates
-	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
+	return tlsOpts
+}
 
-	// Initial webhook TLS options
+func setupCertWatcher(certPath, certName, certKey, watcherType string) (*certwatcher.CertWatcher, error) {
+	if len(certPath) == 0 {
+		return nil, nil
+	}
+
+	setupLog.Info("Initializing certificate watcher using provided certificates",
+		"cert-path", certPath, "cert-name", certName, "cert-key", certKey, "type", watcherType)
+
+	watcher, err := certwatcher.New(
+		filepath.Join(certPath, certName),
+		filepath.Join(certPath, certKey),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize %s certificate watcher: %w", watcherType, err)
+	}
+
+	return watcher, nil
+}
+
+func setupWebhookServer(config *appConfig, tlsOpts []func(*tls.Config)) (webhook.Server, *certwatcher.CertWatcher, error) {
+	webhookCertWatcher, err := setupCertWatcher(config.webhookCertPath, config.webhookCertName, config.webhookCertKey, "webhook")
+	if err != nil {
+		return nil, nil, err
+	}
+
 	webhookTLSOpts := tlsOpts
-
-	if len(webhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
-
-		var err error
-		webhookCertWatcher, err = certwatcher.New(
-			filepath.Join(webhookCertPath, webhookCertName),
-			filepath.Join(webhookCertPath, webhookCertKey),
-		)
-		if err != nil {
-			setupLog.Error(err, "Failed to initialize webhook certificate watcher")
-			os.Exit(1)
-		}
-
-		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
-			config.GetCertificate = webhookCertWatcher.GetCertificate
+	if webhookCertWatcher != nil {
+		webhookTLSOpts = append(webhookTLSOpts, func(tlsConfig *tls.Config) {
+			tlsConfig.GetCertificate = webhookCertWatcher.GetCertificate
 		})
 	}
 
@@ -170,149 +178,148 @@ func main() {
 		TLSOpts: webhookTLSOpts,
 	})
 
-	// Create a custom HTTP handler that serves metrics, health checks, and status
-	mux := http.NewServeMux()
+	return webhookServer, webhookCertWatcher, nil
+}
 
-	// Add status endpoint
+func createHTTPHandler() *http.ServeMux {
+	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"service":"kubeftpd","version":"%s","commit":"%s","date":"%s","status":"running"}`+"\n", version, commit, date)
 	})
+	return mux
+}
 
-	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
-	// More info:
-	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/server
-	// - https://book.kubebuilder.io/reference/metrics.html
+func setupMetricsServer(config *appConfig, tlsOpts []func(*tls.Config), mux *http.ServeMux) (metricsserver.Options, *certwatcher.CertWatcher, error) {
 	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
+		BindAddress:   config.metricsAddr,
+		SecureServing: config.secureMetrics,
 		TLSOpts:       tlsOpts,
-		ExtraHandlers: map[string]http.Handler{
-			"/": mux,
-		},
+		ExtraHandlers: map[string]http.Handler{"/": mux},
 	}
 
-	if secureMetrics {
-		// FilterProvider is used to protect the metrics endpoint with authn/authz.
-		// These configurations ensure that only authorized users and service accounts
-		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
-		// https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/filters#WithAuthenticationAndAuthorization
+	if config.secureMetrics {
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
 
-	// If the certificate is not specified, controller-runtime will automatically
-	// generate self-signed certificates for the metrics server. While convenient for development and testing,
-	// this setup is not recommended for production.
-	//
-	// TODO(user): If you enable certManager, uncomment the following lines:
-	// - [METRICS-WITH-CERTS] at config/default/kustomization.yaml to generate and use certificates
-	// managed by cert-manager for the metrics server.
-	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
-	if len(metricsCertPath) > 0 {
-		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
+	metricsCertWatcher, err := setupCertWatcher(config.metricsCertPath, config.metricsCertName, config.metricsCertKey, "metrics")
+	if err != nil {
+		return metricsserver.Options{}, nil, err
+	}
 
-		var err error
-		metricsCertWatcher, err = certwatcher.New(
-			filepath.Join(metricsCertPath, metricsCertName),
-			filepath.Join(metricsCertPath, metricsCertKey),
-		)
-		if err != nil {
-			setupLog.Error(err, "to initialize metrics certificate watcher", "error", err)
-			os.Exit(1)
-		}
-
-		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(config *tls.Config) {
-			config.GetCertificate = metricsCertWatcher.GetCertificate
+	if metricsCertWatcher != nil {
+		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(tlsConfig *tls.Config) {
+			tlsConfig.GetCertificate = metricsCertWatcher.GetCertificate
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: metricsAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "099fc565.golder.tech",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+	return metricsServerOptions, metricsCertWatcher, nil
+}
+
+func setupControllers(mgr ctrl.Manager) error {
+	controllers := []struct {
+		name       string
+		reconciler interface{ SetupWithManager(ctrl.Manager) error }
+	}{
+		{"User", &controller.UserReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
+		{"MinioBackend", &controller.MinioBackendReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
+		{"WebDavBackend", &controller.WebDavBackendReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
+		{"FilesystemBackend", &controller.FilesystemBackendReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
 	}
 
-	if err := (&controller.UserReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "User")
-		os.Exit(1)
+	for _, c := range controllers {
+		if err := c.reconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller %s: %w", c.name, err)
+		}
 	}
-	if err := (&controller.MinioBackendReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MinioBackend")
-		os.Exit(1)
-	}
-	if err := (&controller.WebDavBackendReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "WebDavBackend")
-		os.Exit(1)
-	}
-	if err = (&controller.FilesystemBackendReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "FilesystemBackend")
-		os.Exit(1)
-	}
-	// +kubebuilder:scaffold:builder
 
+	return nil
+}
+
+func addCertWatchersToManager(mgr ctrl.Manager, metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher) error {
 	if metricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			os.Exit(1)
+			return fmt.Errorf("unable to add metrics certificate watcher to manager: %w", err)
 		}
 	}
 
 	if webhookCertWatcher != nil {
 		setupLog.Info("Adding webhook certificate watcher to manager")
 		if err := mgr.Add(webhookCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
-			os.Exit(1)
+			return fmt.Errorf("unable to add webhook certificate watcher to manager: %w", err)
 		}
 	}
 
+	return nil
+}
+
+func setupHealthChecks(mgr ctrl.Manager) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		return fmt.Errorf("unable to set up health check: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		return fmt.Errorf("unable to set up ready check: %w", err)
+	}
+	return nil
+}
+
+func main() {
+	config, opts := parseFlags()
+	processEnvironmentOverrides(config)
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	setupLog.Info("Starting KubeFTPd", "version", version, "commit", commit, "date", date)
+
+	tlsOpts := setupTLSOptions(config.enableHTTP2)
+
+	webhookServer, webhookCertWatcher, err := setupWebhookServer(config, tlsOpts)
+	if err != nil {
+		setupLog.Error(err, "Failed to setup webhook server")
+		os.Exit(1)
+	}
+
+	mux := createHTTPHandler()
+	metricsServerOptions, metricsCertWatcher, err := setupMetricsServer(config, tlsOpts, mux)
+	if err != nil {
+		setupLog.Error(err, "Failed to setup metrics server")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                 scheme,
+		Metrics:                metricsServerOptions,
+		WebhookServer:          webhookServer,
+		HealthProbeBindAddress: config.metricsAddr,
+		LeaderElection:         config.enableLeaderElection,
+		LeaderElectionID:       "099fc565.golder.tech",
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err := setupControllers(mgr); err != nil {
+		setupLog.Error(err, "Failed to setup controllers")
+		os.Exit(1)
+	}
+
+	if err := addCertWatchersToManager(mgr, metricsCertWatcher, webhookCertWatcher); err != nil {
+		setupLog.Error(err, "Failed to add certificate watchers")
+		os.Exit(1)
+	}
+
+	if err := setupHealthChecks(mgr); err != nil {
+		setupLog.Error(err, "Failed to setup health checks")
 		os.Exit(1)
 	}
 
 	// Start FTP server
-	ftpServer := ftp.NewServer(ftpPort, ftpPasvPorts, mgr.GetClient())
-
-	// Start FTP server in a goroutine
+	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, mgr.GetClient())
 	ctx := ctrl.SetupSignalHandler()
+
 	go func() {
-		setupLog.Info("starting FTP server", "port", ftpPort, "pasv-ports", ftpPasvPorts)
+		setupLog.Info("starting FTP server", "port", config.ftpPort, "pasv-ports", config.ftpPasvPorts)
 		if err := ftpServer.Start(ctx); err != nil {
 			setupLog.Error(err, "FTP server error")
 		}
