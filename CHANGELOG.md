@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.1] - 2025-08-18
+
+### Fixed
+- **HTTPS/HTTP health probe mismatch**: Fixed health probe failures caused by secureMetrics defaulting to true
+  - Health probes were failing with "Client sent an HTTP request to an HTTPS server"
+  - Changed secureMetrics default from true to false in main.go:85
+  - Controller-runtime was auto-generating TLS certificates when secureMetrics=true but no cert path provided
+  - Internal metrics/health endpoints don't need HTTPS for cluster-internal communication
+  - Pods now reach 1/1 Ready status with proper HTTP health check responses
+
+## [v0.4.0] - 2025-08-18
+
+### Removed
+- **Leader election**: Removed leader election mechanism to simplify deployment and reduce complexity
+  - Controllers only validate configurations and update status with no shared state coordination required
+  - Eliminates potential port conflicts and simplifies RBAC requirements
+  - Multiple replicas can now safely run without coordination overhead
+  - Removed `--leader-elect` flag and all associated leader election RBAC resources
+
+### Fixed
+- **HTTP port binding conflict**: Fixed port conflict between metrics server and health probe endpoints
+  - Both services now properly share the same HTTP server on port 8080
+  - Eliminates startup failures caused by port binding conflicts
+
 ## [v0.3.1] - 2025-08-18
 
 ### Fixed
