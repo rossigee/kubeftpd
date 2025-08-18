@@ -22,6 +22,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - ftp.golder.org
   resources:
   - filesystembackends
@@ -196,7 +204,7 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "kubeftpd.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
-{{- if .Values.controller.metrics.enabled }}
+{{- if .Values.controller.http.enabled }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

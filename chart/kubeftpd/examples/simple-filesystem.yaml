@@ -62,9 +62,9 @@ ftp:
         min: 30000
         max: 30010
 
-# Enable metrics and resource limits
+# Enable HTTP server (metrics, health, status) and resource limits
 controller:
-  metrics:
+  http:
     enabled: true
   resources:
     limits:

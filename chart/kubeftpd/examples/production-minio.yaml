@@ -103,8 +103,8 @@ controller:
       cpu: 200m
       memory: 256Mi
 
-  # Enable metrics and monitoring
-  metrics:
+  # Enable HTTP server (metrics, health, status) and monitoring
+  http:
     enabled: true
     serviceMonitor:
       enabled: true
@@ -117,7 +117,7 @@ controller:
   livenessProbe:
     httpGet:
       path: /healthz
-      port: 8081
+      port: 8080
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 5
@@ -126,7 +126,7 @@ controller:
   readinessProbe:
     httpGet:
       path: /readyz
-      port: 8081
+      port: 8080
     initialDelaySeconds: 10
     periodSeconds: 10
     timeoutSeconds: 5

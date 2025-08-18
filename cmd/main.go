@@ -27,6 +27,9 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"fmt"
+	"net/http"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -46,7 +49,7 @@ import (
 
 var (
 	// Version information - set during build
-	version = "v0.1.0"
+	version = "v0.3.0"
 	commit  = "unknown"
 	date    = "unknown"
 
@@ -67,15 +70,13 @@ func main() {
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
 	var enableLeaderElection bool
-	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
 	var ftpPort int
 	var ftpPasvPorts string
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
-		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&metricsAddr, "http-bind-address", ":8080", "The address the HTTP server binds to (serves metrics, health, and status). "+
+		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the HTTP server.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -169,6 +170,15 @@ func main() {
 		TLSOpts: webhookTLSOpts,
 	})
 
+	// Create a custom HTTP handler that serves metrics, health checks, and status
+	mux := http.NewServeMux()
+
+	// Add status endpoint
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"service":"kubeftpd","version":"%s","commit":"%s","date":"%s","status":"running"}`+"\n", version, commit, date)
+	})
+
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:
 	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/server
@@ -177,6 +187,9 @@ func main() {
 		BindAddress:   metricsAddr,
 		SecureServing: secureMetrics,
 		TLSOpts:       tlsOpts,
+		ExtraHandlers: map[string]http.Handler{
+			"/": mux,
+		},
 	}
 
 	if secureMetrics {
@@ -218,7 +231,7 @@ func main() {
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: probeAddr,
+		HealthProbeBindAddress: metricsAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "099fc565.golder.tech",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily

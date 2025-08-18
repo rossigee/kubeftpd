@@ -381,8 +381,7 @@ spec:
 | `FTP_MAX_CONNECTIONS` | Maximum concurrent FTP connections | `100` |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
 | `LOG_FORMAT` | Log format (json, text) | `json` |
-| `METRICS_PORT` | Metrics endpoint port | `8080` |
-| `HEALTH_PORT` | Health check endpoint port | `8081` |
+| `HTTP_PORT` | HTTP server port (metrics, health, status) | `8080` |
 
 ### Security Best Practices
 
@@ -603,8 +602,9 @@ spec:
 
 ### Health Checks
 
-- **Liveness**: `/healthz` on port 8081
-- **Readiness**: `/readyz` on port 8081
+- **Liveness**: `/healthz` on port 8080
+- **Readiness**: `/readyz` on port 8080
+- **Status**: `/` on port 8080 (service information)
 
 ### Metrics
 

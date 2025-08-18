@@ -62,7 +62,6 @@ spec:
         - /manager
         args:
           - --leader-elect
-          - --health-probe-bind-address=:8081
         image: controller:latest
         name: manager
         ports:
@@ -78,9 +77,6 @@ spec:
         - containerPort: 8080
           name: metrics
           protocol: TCP
-        - containerPort: 8081
-          name: health
-          protocol: TCP
         env:
         - name: FTP_PORT
           value: "21"
@@ -92,10 +88,8 @@ spec:
           value: "info"
         - name: LOG_FORMAT
           value: "json"
-        - name: METRICS_PORT
+        - name: HTTP_PORT
           value: "8080"
-        - name: HEALTH_PORT
-          value: "8081"
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
@@ -105,13 +99,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8081
+            port: 8080
           initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
           httpGet:
             path: /readyz
-            port: 8081
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
         # TODO(user): Configure the resources accordingly based on the project requirements.

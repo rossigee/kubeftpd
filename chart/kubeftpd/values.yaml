@@ -13,7 +13,7 @@ controller:
   image:
     registry: ghcr.io
     repository: rossigee/kubeftpd
-    tag: "v0.2.6"
+    tag: "v0.3.0"
     pullPolicy: IfNotPresent
     pullSecrets: []
 
@@ -56,8 +56,8 @@ controller:
   leaderElection:
     enabled: true
 
-  # Metrics configuration
-  metrics:
+  # HTTP server configuration (metrics, health, status)
+  http:
     enabled: true
     service:
       port: 8080
@@ -72,14 +72,14 @@ controller:
   livenessProbe:
     httpGet:
       path: /healthz
-      port: 8081
+      port: 8080
     initialDelaySeconds: 15
     periodSeconds: 20
 
   readinessProbe:
     httpGet:
       path: /readyz
-      port: 8081
+      port: 8080
     initialDelaySeconds: 5
     periodSeconds: 10
 

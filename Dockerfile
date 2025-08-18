@@ -2,7 +2,7 @@
 FROM golang:1.25-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
-ARG VERSION=v0.1.0
+ARG VERSION=v0.3.0
 ARG COMMIT=unknown
 ARG DATE=unknown
 
@@ -52,10 +52,7 @@ EXPOSE 21
 # Expose passive port range for FTP data connections
 EXPOSE 30000-30100
 
-# Expose health check port
-EXPOSE 8081
-
-# Expose metrics port
+# Expose HTTP port (metrics, health checks, status)
 EXPOSE 8080
 
 ENTRYPOINT ["/kubeftpd"]

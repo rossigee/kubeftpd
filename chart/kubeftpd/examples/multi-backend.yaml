@@ -179,7 +179,7 @@ controller:
       cpu: 200m
       memory: 256Mi
 
-  metrics:
+  http:
     enabled: true
     serviceMonitor:
       enabled: true

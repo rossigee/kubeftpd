@@ -1,4 +1,4 @@
-{{- if and .Values.controller.metrics.enabled .Values.controller.metrics.serviceMonitor.enabled }}
+{{- if and .Values.controller.http.enabled .Values.controller.http.serviceMonitor.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -6,18 +6,18 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kubeftpd.labels" . | nindent 4 }}
-    {{- with .Values.controller.metrics.serviceMonitor.additionalLabels }}
+    {{- with .Values.controller.http.serviceMonitor.additionalLabels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   endpoints:
-  - interval: {{ .Values.controller.metrics.serviceMonitor.interval }}
+  - interval: {{ .Values.controller.http.serviceMonitor.interval }}
     path: /metrics
-    port: metrics
+    port: http
     scheme: http
-    scrapeTimeout: {{ .Values.controller.metrics.serviceMonitor.scrapeTimeout }}
+    scrapeTimeout: {{ .Values.controller.http.serviceMonitor.scrapeTimeout }}
   selector:
     matchLabels:
       {{- include "kubeftpd.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: metrics
+      app.kubernetes.io/component: http
 {{- end }}

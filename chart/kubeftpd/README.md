@@ -224,7 +224,7 @@ ftp:
 
 ```yaml
 controller:
-  metrics:
+  http:
     enabled: true
     serviceMonitor:
       enabled: true

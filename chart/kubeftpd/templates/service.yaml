@@ -61,26 +61,26 @@ spec:
     {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: manager
 {{- end }}
-{{- if .Values.controller.metrics.enabled }}
+{{- if .Values.controller.http.enabled }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "kubeftpd.fullname" . }}-metrics-service
+  name: {{ include "kubeftpd.fullname" . }}-http-service
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kubeftpd.labels" . | nindent 4 }}
-    app.kubernetes.io/component: metrics
-  {{- with .Values.controller.metrics.service.annotations }}
+    app.kubernetes.io/component: http
+  {{- with .Values.controller.http.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
   ports:
-  - name: metrics
-    port: {{ .Values.controller.metrics.service.port }}
+  - name: http
+    port: {{ .Values.controller.http.service.port }}
     protocol: TCP
-    targetPort: metrics
+    targetPort: http
   selector:
     {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: manager
