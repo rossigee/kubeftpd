@@ -1,4 +1,5 @@
 {{- if .Values.backends.minio.enabled }}
+---
 {{- range .Values.backends.minio.instances }}
 ---
 apiVersion: ftp.golder.org/v1

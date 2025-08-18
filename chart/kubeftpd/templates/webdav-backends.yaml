@@ -1,4 +1,5 @@
 {{- if .Values.backends.webdav.enabled }}
+---
 {{- range .Values.backends.webdav.instances }}
 ---
 apiVersion: ftp.golder.org/v1

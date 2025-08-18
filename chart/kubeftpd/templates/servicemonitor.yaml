@@ -1,4 +1,5 @@
 {{- if and .Values.controller.http.enabled .Values.controller.http.serviceMonitor.enabled }}
+---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

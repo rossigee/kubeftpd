@@ -1,4 +1,5 @@
 {{- if .Values.backends.filesystem.enabled }}
+---
 {{- range .Values.backends.filesystem.instances }}
 ---
 apiVersion: ftp.golder.org/v1
