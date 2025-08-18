@@ -60,7 +60,7 @@ echo "📄 Creating example manifests..."
 mkdir -p examples
 
 cat > examples/minio-backend.yaml << EOF
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: MinioBackend
 metadata:
   name: dev-minio-backend
@@ -77,7 +77,7 @@ spec:
 EOF
 
 cat > examples/test-user.yaml << EOF
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: test-user

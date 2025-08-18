@@ -10,12 +10,12 @@ A Kubernetes-native FTP service that provides secure file transfer capabilities 
 
 ## Overview
 
-KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a cloud-native approach that leverages Kubernetes for configuration and management. It supports multiple storage backends including MinIO (S3-compatible) and WebDAV, making it suitable for various use cases from document scanning workflows to general file transfer needs.
+KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a cloud-native approach that leverages Kubernetes for configuration and management. It supports multiple storage backends including MinIO (S3-compatible), WebDAV, and local filesystem storage, making it suitable for various use cases from document scanning workflows to general file transfer needs.
 
 ### Key Features
 
 - **Kubernetes-Native**: Uses CRDs for user and backend configuration
-- **Multiple Storage Backends**: Support for MinIO/S3 and WebDAV endpoints
+- **Multiple Storage Backends**: Support for MinIO/S3, WebDAV endpoints, and local filesystem storage
 - **PASV Mode Support**: Currently supports passive FTP mode with active mode planned
 - **RBAC Integration**: Full Kubernetes RBAC support for access control
 - **Health & Metrics**: Built-in health checks, JSON logging, and metrics endpoints
@@ -28,8 +28,9 @@ KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a clo
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   FTP Client    │────│   KubeFTPd       │────│ Storage Backend │
-│                 │    │   (Controller)   │    │ (MinIO/WebDAV)  │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+│                 │    │   (Controller)   │    │ (MinIO/WebDAV/  │
+└─────────────────┘    └──────────────────┘    │  Filesystem)    │
+                                               └─────────────────┘
                               │
                               ▼
                        ┌──────────────────┐
@@ -80,7 +81,7 @@ kubectl apply -f config/manager/
 
 For MinIO:
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: MinioBackend
 metadata:
   name: minio-backend
@@ -98,7 +99,7 @@ spec:
 
 For WebDAV:
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: WebDavBackend
 metadata:
   name: webdav-backend
@@ -113,11 +114,40 @@ spec:
     insecureSkipVerify: false
 ```
 
+For Filesystem:
+```yaml
+apiVersion: ftp.golder.org/v1
+kind: FilesystemBackend
+metadata:
+  name: filesystem-backend
+  namespace: default
+spec:
+  basePath: "/data/ftp"
+  readOnly: false
+  fileMode: "0644"
+  dirMode: "0755"
+  maxFileSize: 0
+  volumeClaimRef:
+    name: ftp-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ftp-storage
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+```
+
 4. **Create FTP users:**
 
 Option A - Using plaintext password (development only):
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: scanner-receipts
@@ -144,7 +174,7 @@ kubectl create secret generic scanner-password \
 ```
 
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: scanner-receipts
@@ -182,7 +212,7 @@ Defines FTP users with their credentials, permissions, and backend configuration
 
 Option A - Plaintext password:
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: example-user
@@ -207,7 +237,7 @@ status:
 
 Option B - Kubernetes Secret (recommended):
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: example-user
@@ -241,7 +271,7 @@ status:
 Configures MinIO/S3-compatible storage backends.
 
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: MinioBackend
 metadata:
   name: example-minio
@@ -272,7 +302,7 @@ status:
 Configures WebDAV storage backends.
 
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: WebDavBackend
 metadata:
   name: example-webdav
@@ -294,6 +324,47 @@ spec:
 status:
   ready: true
   message: "Backend connection established"
+```
+
+### FilesystemBackend CRD
+
+Configures local filesystem storage backends with Kubernetes persistent volumes.
+
+```yaml
+apiVersion: ftp.golder.org/v1
+kind: FilesystemBackend
+metadata:
+  name: example-filesystem
+  namespace: default
+spec:
+  basePath: "/data/ftp"
+  readOnly: false
+  fileMode: "0644"        # File permissions (octal)
+  dirMode: "0755"         # Directory permissions (octal)
+  maxFileSize: 0          # Maximum file size in bytes (0 = no limit)
+  volumeClaimRef:         # Optional PVC reference
+    name: "ftp-storage"
+    namespace: "default"  # defaults to same namespace
+status:
+  ready: true
+  message: "Filesystem backend ready"
+  mountPath: "/data/ftp"
+```
+
+**Required PersistentVolumeClaim:**
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ftp-storage
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: fast-ssd  # specify storage class if needed
 ```
 
 ## Configuration

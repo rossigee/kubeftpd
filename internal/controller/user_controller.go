@@ -143,6 +143,15 @@ func (r *UserReconciler) validateUser(ctx context.Context, user *ftpv1.User) err
 		if err != nil {
 			return fmt.Errorf("failed to find WebDavBackend %s/%s: %w", backendNamespace, user.Spec.Backend.Name, err)
 		}
+	case "FilesystemBackend":
+		backend := &ftpv1.FilesystemBackend{}
+		err := r.Get(ctx, client.ObjectKey{
+			Name:      user.Spec.Backend.Name,
+			Namespace: backendNamespace,
+		}, backend)
+		if err != nil {
+			return fmt.Errorf("failed to find FilesystemBackend %s/%s: %w", backendNamespace, user.Spec.Backend.Name, err)
+		}
 	default:
 		return fmt.Errorf("unsupported backend kind: %s", user.Spec.Backend.Kind)
 	}
