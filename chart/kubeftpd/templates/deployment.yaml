@@ -39,8 +39,7 @@ spec:
         image: {{ include "kubeftpd.controller.image" . }}
         imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
         args:
-        - --health-probe-bind-address=:8081
-        - --metrics-bind-address=:{{ .Values.controller.metrics.service.port }}
+        - --http-bind-address=:{{ .Values.controller.http.service.port }}
         {{- if .Values.controller.leaderElection.enabled }}
         - --leader-elect
         {{- end }}
@@ -57,12 +56,10 @@ spec:
           value: {{ .Values.ftp.settings.idleTimeout | quote }}
         - name: FTP_MAX_CONNECTIONS
           value: {{ .Values.ftp.settings.maxConnections | quote }}
-        {{- if .Values.controller.metrics.enabled }}
-        - name: METRICS_PORT
+        {{- if .Values.controller.http.enabled }}
+        - name: HTTP_PORT
           value: "8080"
         {{- end }}
-        - name: HEALTH_PORT
-          value: "8081"
         ports:
         - containerPort: {{ .Values.ftp.port }}
           name: ftp
@@ -74,12 +71,9 @@ spec:
           protocol: TCP
         {{- end }}
         {{- end }}
-        - containerPort: 8081
-          name: health
-          protocol: TCP
-        {{- if .Values.controller.metrics.enabled }}
-        - containerPort: {{ .Values.controller.metrics.service.port }}
-          name: metrics
+        {{- if .Values.controller.http.enabled }}
+        - containerPort: {{ .Values.controller.http.service.port }}
+          name: http
           protocol: TCP
         {{- end }}
         livenessProbe:

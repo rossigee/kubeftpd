@@ -7,12 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0] - 2025-08-18
+
+### Changed
+- **Port consolidation**: Consolidated all HTTP endpoints onto single port 8080
+  - Health checks (`/healthz`, `/readyz`) moved from port 8081 to port 8080
+  - Prometheus metrics endpoint remains on port 8080
+  - Added service status endpoint (`/`) on port 8080 with version information
+- **Configuration simplification**: Removed `--health-probe-bind-address` flag, renamed `--metrics-bind-address` to `--http-bind-address`, and renamed `METRICS_PORT` to `HTTP_PORT` environment variable
+- **Container deployment**: Updated all Kubernetes manifests and Docker configurations for single-port setup
+- **Service naming**: Renamed metrics service to http service to reflect consolidated endpoints
+- **Helm values**: **BREAKING CHANGE** - Renamed `controller.metrics.*` to `controller.http.*` in values.yaml
+
 ### Fixed
 - **FilesystemBackend validation**: Add missing FilesystemBackend validation support in user controller
 - **Chart template**: Correct FTP port configuration in deployment template
 - **Chart CRD**: Add passwordSecret field to User CRD and make password optional
-- **Chart versioning**: Update default image tag from v0.1.0 to v0.2.5
+- **Chart versioning**: Update default image tag from v0.2.6 to v0.3.0
 - **Volume mounting**: Add /data directory volume mount for FilesystemBackend
+
+### Added
+- **Status endpoint**: New JSON status endpoint at `/` showing service name, version, commit, date, and status
+
+## [v0.2.6] - Previous Release
 
 ### Changed
 - **Documentation**: Update README.md to correct API group from ftp.rossigee.com to ftp.golder.org

@@ -36,8 +36,8 @@ const namespace = "kubeftpd-system"
 // serviceAccountName created for the project
 const serviceAccountName = "kubeftpd-controller-manager"
 
-// metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "kubeftpd-controller-manager-metrics-service"
+// metricsServiceName is the name of the HTTP service of the project (metrics, health, status)
+const metricsServiceName = "kubeftpd-controller-manager-http-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
 const metricsRoleBindingName = "kubeftpd-metrics-binding"

@@ -43,7 +43,7 @@ COPY . .
 RUN mkdir -p /var/log/kubeftpd
 
 # Expose all necessary ports
-EXPOSE 21 30000-30100 8080 8081 6060 40000
+EXPOSE 21 30000-30100 8080 6060 40000
 
 # Default command for development
 CMD ["air", "-c", ".air.toml"]

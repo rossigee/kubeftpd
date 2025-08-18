@@ -26,7 +26,7 @@ spec:
       port: {{ $port }}
     {{- end }}
     {{- end }}
-    {{- if .Values.controller.metrics.enabled }}
+    {{- if .Values.controller.http.enabled }}
     - protocol: TCP
       port: 8443
     {{- end }}

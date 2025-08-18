@@ -26,10 +26,8 @@ spec:
           value: "info"
         - name: LOG_FORMAT
           value: "json"
-        - name: METRICS_PORT
+        - name: HTTP_PORT
           value: "8080"
-        - name: HEALTH_PORT
-          value: "8081"
         - name: ENABLE_PPROF
           value: "false"
         # Production security settings

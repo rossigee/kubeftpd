@@ -83,8 +83,7 @@ services:
     ports:
       - "21:21"          # FTP control port
       - "30000-30100:30000-30100"  # FTP passive port range
-      - "8080:8080"      # Metrics
-      - "8081:8081"      # Health checks
+      - "8080:8080"      # Metrics, health checks, and status
     environment:
       # FTP Server Configuration
       FTP_PORT: "21"
@@ -96,9 +95,8 @@ services:
       LOG_LEVEL: "debug"
       LOG_FORMAT: "json"
 
-      # Health and Metrics
-      METRICS_PORT: "8080"
-      HEALTH_PORT: "8081"
+      # HTTP Server (metrics, health, status)
+      HTTP_PORT: "8080"
 
       # Backend Configuration (for testing without Kubernetes)
       TEST_MODE: "true"
@@ -126,7 +124,7 @@ services:
     image: hacdias/webdav:latest
     container_name: kubeftpd-webdav
     ports:
-      - "8080:8080"
+      - "8090:8080"
     environment:
       WEBDAV_USERS: |
         - username: testuser
@@ -155,7 +153,7 @@ services:
       echo 'Testing FTP connection...';
       lftp -e 'set ftp:passive-mode true; ls; quit' -u testuser,testpass ftp://kubeftpd:21 || true;
       echo 'Testing health endpoint...';
-      curl -f http://kubeftpd:8081/healthz || true;
+      curl -f http://kubeftpd:8080/healthz || true;
       echo 'Testing metrics endpoint...';
       curl -f http://kubeftpd:8080/metrics || true;
       echo 'Test complete';

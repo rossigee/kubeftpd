@@ -31,10 +31,7 @@ nodes:
   - containerPort: 30004
     hostPort: 30004
     protocol: TCP
-  # Health and metrics ports
+  # HTTP port (health, metrics, status)
   - containerPort: 8080
     hostPort: 8080
-    protocol: TCP
-  - containerPort: 8081
-    hostPort: 8081
     protocol: TCP
