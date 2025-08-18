@@ -286,9 +286,10 @@ spec:
     secretAccessKey: "minioadmin"
     # Or use Kubernetes Secret:
     useSecret:
-      secretName: "minio-credentials"
-      accessKeyIDKey: "access-key"
-      secretAccessKeyKey: "secret-key"
+      name: "minio-credentials"
+      namespace: "custom-namespace"  # optional, defaults to MinioBackend's namespace
+      accessKeyIDKey: "access-key"      # optional, defaults to "accessKeyID"
+      secretAccessKeyKey: "secret-key"  # optional, defaults to "secretAccessKey"
   tls:
     insecureSkipVerify: false
     # caCert: "..."  # TODO: CA certificate support

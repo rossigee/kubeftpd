@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.1] - 2025-08-18
+
+### Fixed
+- **MinioBackend secret namespace bug**: Fixed critical namespace lookup bug where MinioBackend was looking for secrets in 'default' namespace instead of the backend's namespace
+  - Secret references without explicit namespace now correctly default to the backend's namespace
+  - Added comprehensive unit tests to prevent regression of this issue
+  - Updated documentation to clarify namespace behavior for secret references
+
+### Added
+- **MinioBackend namespace tests**: Comprehensive unit test suite for namespace secret lookup behavior
+  - Regression test to ensure 'default' namespace is never used unless explicitly specified
+  - Integration-style test simulating real-world scanner-receipts scenario
+  - Tests for custom key names and error handling
+
+### Changed
+- **Documentation**: Updated MinioBackend documentation to clarify optional namespace parameter in useSecret configuration
+
 ## [v0.3.0] - 2025-08-18
 
 ### Changed
