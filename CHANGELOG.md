@@ -5,6 +5,19 @@ All notable changes to KubeFTPd will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **FilesystemBackend validation**: Add missing FilesystemBackend validation support in user controller
+- **Chart template**: Correct FTP port configuration in deployment template
+- **Chart CRD**: Add passwordSecret field to User CRD and make password optional
+- **Chart versioning**: Update default image tag from v0.1.0 to v0.2.5
+- **Volume mounting**: Add /data directory volume mount for FilesystemBackend
+
+### Changed
+- **Documentation**: Update README.md to correct API group from ftp.rossigee.com to ftp.golder.org
+- **Documentation**: Add comprehensive FilesystemBackend documentation and examples
+
 ## [v0.1.1] - 2025-08-16
 
 ### Added
@@ -135,8 +148,8 @@ kubectl create secret generic user-ftp-password --from-literal=password="MySecur
 ### Technical Specifications
 
 #### API Version
-- **API Group**: `ftp.rossigee.com/v1`
-- **Resources**: User, MinioBackend, WebDavBackend
+- **API Group**: `ftp.golder.org/v1`
+- **Resources**: User, MinioBackend, WebDavBackend, FilesystemBackend
 
 #### Supported Protocols
 - **FTP**: Passive mode (PASV) support
@@ -175,7 +188,7 @@ kubectl apply -f https://github.com/rossigee/kubeftpd/releases/download/v0.1.0/k
 
 #### MinIO Backend
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: MinioBackend
 metadata:
   name: minio-storage
@@ -190,7 +203,7 @@ spec:
 
 #### User Configuration
 ```yaml
-apiVersion: ftp.rossigee.com/v1
+apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: ftp-user

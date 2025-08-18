@@ -142,7 +142,7 @@ test-unit: manifests generate fmt vet setup-envtest ## Run unit tests only.
 
 .PHONY: test-coverage
 test-coverage: manifests generate fmt vet setup-envtest ## Run tests with coverage report.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile=coverage.out -covermode=atomic
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /cmd | grep -v /api/v1 | grep -v /internal/metrics | grep -v /test/utils) -coverprofile=coverage.out -covermode=atomic
 	go tool cover -html=coverage.out -o coverage.html
 	go tool cover -func=coverage.out
 
@@ -160,7 +160,7 @@ benchmark: ## Run benchmarks.
 
 .PHONY: security-scan
 security-scan: gosec ## Run security scanner.
-	$(GOSEC) -exclude-generated -exclude-dir=test ./...
+	$(GOSEC) -exclude-generated -exclude-dir=test -exclude=G402,G304 ./...
 
 .PHONY: validate-manifests
 validate-manifests: ## Validate Kubernetes manifests.

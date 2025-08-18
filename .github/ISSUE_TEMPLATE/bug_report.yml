@@ -89,7 +89,7 @@ body:
       label: Kubernetes Manifests
       description: Relevant CRD manifests (User, MinioBackend, WebDavBackend)
       placeholder: |
-        apiVersion: ftp.rossigee.com/v1
+        apiVersion: ftp.golder.org/v1
         kind: User
         ...
       render: yaml

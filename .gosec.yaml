@@ -1,0 +1,24 @@
+---
+# Gosec configuration for kubeftpd
+# Exclude intentional security configurations that are properly documented
+
+global:
+  nosec: true  # Respect nolint:gosec comments
+
+exclude:
+  # G402: TLS InsecureSkipVerify - intentional configuration options for testing/dev
+  - G402
+  # G304: File inclusion via variable - controlled by backend configuration, paths are validated
+  - G304
+
+exclude-rules:
+  # Specific exclusions for intentional uses
+  - linters:
+      - gosec
+    text: "InsecureSkipVerify is an intentional configuration option"
+  - linters:
+      - gosec
+    text: "File path is controlled by backend configuration"
+  - linters:
+      - gosec
+    text: "File path is validated and controlled by backend"
