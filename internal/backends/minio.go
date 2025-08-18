@@ -32,7 +32,7 @@ func newMinioBackendImpl(backend *ftpv1.MinioBackend, kubeClient client.Client) 
 	// If useSecret is specified, read from Kubernetes Secret
 	if backend.Spec.Credentials.UseSecret != nil {
 		var err error
-		accessKey, secretKey, err = getMinioCredentialsFromSecret(backend.Spec.Credentials.UseSecret, kubeClient)
+		accessKey, secretKey, err = getMinioCredentialsFromSecret(backend.Spec.Credentials.UseSecret, backend.Namespace, kubeClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get credentials from secret: %w", err)
 		}
@@ -95,13 +95,15 @@ func newMinioBackendImpl(backend *ftpv1.MinioBackend, kubeClient client.Client) 
 }
 
 // getMinioCredentialsFromSecret retrieves MinIO credentials from a Kubernetes Secret
-func getMinioCredentialsFromSecret(secretRef *ftpv1.MinioSecretRef, kubeClient client.Client) (string, string, error) {
+func getMinioCredentialsFromSecret(secretRef *ftpv1.MinioSecretRef, backendNamespace string, kubeClient client.Client) (string, string, error) {
 	if secretRef == nil {
 		return "", "", fmt.Errorf("secret reference is nil")
 	}
 
 	ctx := context.TODO()
-	secretNamespace := "default"
+	// Default to the backend's namespace if no namespace is explicitly specified in the secret reference
+	// This ensures secrets are looked up in the same namespace as the MinioBackend resource
+	secretNamespace := backendNamespace
 	if secretRef.Namespace != nil && *secretRef.Namespace != "" {
 		secretNamespace = *secretRef.Namespace
 	}
