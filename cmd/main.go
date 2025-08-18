@@ -65,28 +65,24 @@ func init() {
 }
 
 type appConfig struct {
-	metricsAddr          string
-	metricsCertPath      string
-	metricsCertName      string
-	metricsCertKey       string
-	webhookCertPath      string
-	webhookCertName      string
-	webhookCertKey       string
-	enableLeaderElection bool
-	secureMetrics        bool
-	enableHTTP2          bool
-	ftpPort              int
-	ftpPasvPorts         string
+	metricsAddr     string
+	metricsCertPath string
+	metricsCertName string
+	metricsCertKey  string
+	webhookCertPath string
+	webhookCertName string
+	webhookCertKey  string
+	secureMetrics   bool
+	enableHTTP2     bool
+	ftpPort         int
+	ftpPasvPorts    string
 }
 
 func parseFlags() (*appConfig, zap.Options) {
 	config := &appConfig{}
 	flag.StringVar(&config.metricsAddr, "http-bind-address", ":8080", "The address the HTTP server binds to (serves metrics, health, and status). "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the HTTP server.")
-	flag.BoolVar(&config.enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&config.secureMetrics, "metrics-secure", true,
+	flag.BoolVar(&config.secureMetrics, "metrics-secure", false,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.StringVar(&config.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	flag.StringVar(&config.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
@@ -287,12 +283,9 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: config.metricsAddr,
-		LeaderElection:         config.enableLeaderElection,
-		LeaderElectionID:       "099fc565.golder.tech",
+		Scheme:        scheme,
+		Metrics:       metricsServerOptions,
+		WebhookServer: webhookServer,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
