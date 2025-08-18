@@ -176,7 +176,7 @@ func main() {
 	// Add status endpoint
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"service":"kubeftpd","version":"%s","commit":"%s","date":"%s","status":"running"}`+"\n", version, commit, date)
+		_, _ = fmt.Fprintf(w, `{"service":"kubeftpd","version":"%s","commit":"%s","date":"%s","status":"running"}`+"\n", version, commit, date)
 	})
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
