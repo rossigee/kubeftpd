@@ -1,5 +1,5 @@
----
 {{- if .Values.controller.rbac.create -}}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -7,133 +7,133 @@ metadata:
   labels:
     {{- include "kubeftpd.labels" . | nindent 4 }}
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumeclaims
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - filesystembackends
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - filesystembackends/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - filesystembackends/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - miniobackends
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - miniobackends/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - miniobackends/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - users
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - users/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - users/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - webdavbackends
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - webdavbackends/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - webdavbackends/status
-  verbs:
-  - get
-  - patch
-  - update
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - filesystembackends
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - filesystembackends/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - filesystembackends/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - miniobackends
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - miniobackends/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - miniobackends/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - users
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - users/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - users/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - webdavbackends
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - webdavbackends/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - webdavbackends/status
+    verbs:
+      - get
+      - patch
+      - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -146,9 +146,9 @@ roleRef:
   kind: ClusterRole
   name: {{ include "kubeftpd.fullname" . }}-manager-role
 subjects:
-- kind: ServiceAccount
-  name: {{ include "kubeftpd.serviceAccountName" . }}
-  namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: {{ include "kubeftpd.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
 {{- if .Values.controller.http.enabled }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -196,8 +196,8 @@ roleRef:
   kind: Role
   name: {{ include "kubeftpd.fullname" . }}-proxy-role
 subjects:
-- kind: ServiceAccount
-  name: {{ include "kubeftpd.serviceAccountName" . }}
-  namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: {{ include "kubeftpd.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
 {{- end }}
 {{- end }}

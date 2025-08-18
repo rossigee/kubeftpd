@@ -4,46 +4,46 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumeclaims
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - filesystembackends
-  - miniobackends
-  - users
-  - webdavbackends
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - filesystembackends/finalizers
-  - miniobackends/finalizers
-  - users/finalizers
-  - webdavbackends/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ftp.golder.org
-  resources:
-  - filesystembackends/status
-  - miniobackends/status
-  - users/status
-  - webdavbackends/status
-  verbs:
-  - get
-  - patch
-  - update
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - filesystembackends
+      - miniobackends
+      - users
+      - webdavbackends
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - filesystembackends/finalizers
+      - miniobackends/finalizers
+      - users/finalizers
+      - webdavbackends/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - ftp.golder.org
+    resources:
+      - filesystembackends/status
+      - miniobackends/status
+      - users/status
+      - webdavbackends/status
+    verbs:
+      - get
+      - patch
+      - update
