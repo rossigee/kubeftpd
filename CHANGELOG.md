@@ -7,13 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Improved
+## [v0.4.2] - 2025-08-19
+
+### Added
 - **Intelligent FTP port defaults**: FTP port now automatically defaults based on user privileges
   - Root users (UID 0): Default to port 21 (standard FTP port)
   - Non-root users: Default to port 2121 to avoid "permission denied" errors
   - Prevents binding failures when running as unprivileged user
   - Environment variable `FTP_PORT` and `--ftp-port` flag still override defaults
   - Kubernetes deployments unaffected (containers run as root by default)
+
+### Changed
+- Helm chart version updated to 0.3.2
+- Reduced passive FTP port range from 100 to 20 ports for efficiency
+- Disabled default admin user in Helm chart to avoid circular GitOps dependencies
+
+### Fixed
+- Resolved pre-commit hook conflicts between controller-gen and yamllint
+- Added auto-generated RBAC files to yamllint ignore list
 
 ## [v0.4.1] - 2025-08-18
 
