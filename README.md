@@ -374,7 +374,7 @@ spec:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FTP_PORT` | FTP server port (configurable for non-root) | `21` |
+| `FTP_PORT` | FTP server port | `21` (root), `2121` (non-root) |
 | `FTP_PASSIVE_PORT_MIN` | Minimum passive port range | `30000` |
 | `FTP_PASSIVE_PORT_MAX` | Maximum passive port range | `30100` |
 | `FTP_WELCOME_MESSAGE` | FTP welcome message | `"Welcome to KubeFTPd"` |
@@ -386,8 +386,13 @@ spec:
 
 ### Security Best Practices
 
-1. **Use Kubernetes Secrets** for storing credentials instead of plain text
-2. **Enable Webhook Validation** for password policies and production compliance:
+1. **Port Configuration**: KubeFTPd automatically selects safe default ports based on user privileges:
+   - **Root users (UID 0)**: Default to port 21 (standard FTP port)
+   - **Non-root users**: Default to port 2121 to avoid "permission denied" errors
+   - Override with `FTP_PORT` environment variable or `--ftp-port` flag if needed
+
+2. **Use Kubernetes Secrets** for storing credentials instead of plain text
+3. **Enable Webhook Validation** for password policies and production compliance:
    ```yaml
    webhook:
      enabled: true
@@ -516,7 +521,7 @@ helm repo add kubeftpd https://rossigee.github.io/kubeftpd
 helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system \
   --set controller.image.tag=v0.2.6 \
   --set webhook.enabled=true \
-  --set ftp.service.port=2121  # Example: non-root port
+  --set ftp.service.port=2121  # Example: override default port
 ```
 
 **Helm Configuration Options:**

@@ -21,6 +21,16 @@ import (
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 )
 
+// getTestFTPPort returns the FTP port to use for tests
+// Defaults to 21 for compatibility with existing test setup (K8s manifests set FTP_PORT=21)
+func getTestFTPPort() string {
+	if port := os.Getenv("TEST_FTP_PORT"); port != "" {
+		return port
+	}
+	// Default to 21 for E2E tests since K8s manifests explicitly set FTP_PORT=21
+	return "21"
+}
+
 var _ = Describe("FilesystemBackend E2E Tests", func() {
 	var (
 		namespace    string
@@ -328,7 +338,7 @@ func testFilesystemFTPOperations(basePath string) {
 		Timeout:  time.Second * 30,
 	}
 
-	client, err := goftp.DialConfig(ftpConfig, "localhost:21")
+	client, err := goftp.DialConfig(ftpConfig, "localhost:"+getTestFTPPort())
 	Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = client.Close() }()
 
@@ -417,7 +427,7 @@ func testReadOnlyFTPOperations() {
 		Timeout:  time.Second * 30,
 	}
 
-	client, err := goftp.DialConfig(ftpConfig, "localhost:21")
+	client, err := goftp.DialConfig(ftpConfig, "localhost:"+getTestFTPPort())
 	Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = client.Close() }()
 

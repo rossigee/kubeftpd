@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved
+- **Intelligent FTP port defaults**: FTP port now automatically defaults based on user privileges
+  - Root users (UID 0): Default to port 21 (standard FTP port)
+  - Non-root users: Default to port 2121 to avoid "permission denied" errors
+  - Prevents binding failures when running as unprivileged user
+  - Environment variable `FTP_PORT` and `--ftp-port` flag still override defaults
+  - Kubernetes deployments unaffected (containers run as root by default)
+
 ## [v0.4.1] - 2025-08-18
 
 ### Fixed

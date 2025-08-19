@@ -78,6 +78,15 @@ type appConfig struct {
 	ftpPasvPorts    string
 }
 
+func getDefaultFTPPort() int {
+	// Check if running as root (UID 0) - can bind to port 21
+	// Otherwise default to port 2121 for unprivileged users
+	if os.Getuid() == 0 {
+		return 21
+	}
+	return 2121
+}
+
 func parseFlags() (*appConfig, zap.Options) {
 	config := &appConfig{}
 	flag.StringVar(&config.metricsAddr, "http-bind-address", ":8080", "The address the HTTP server binds to (serves metrics, health, and status). "+
@@ -93,7 +102,7 @@ func parseFlags() (*appConfig, zap.Options) {
 	flag.StringVar(&config.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&config.enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.IntVar(&config.ftpPort, "ftp-port", 21, "The port on which the FTP server listens")
+	flag.IntVar(&config.ftpPort, "ftp-port", getDefaultFTPPort(), "The port on which the FTP server listens")
 	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "30000-31000", "The range of ports for FTP passive mode")
 
 	opts := zap.Options{Development: true}

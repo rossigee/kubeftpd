@@ -35,7 +35,7 @@ repos:
     rev: v1.5.5
     hooks:
       - id: remove-tabs
-        exclude: '(Makefile|\.mk|\.go)$'
+        exclude: '(Makefile|\.mk|\.go|go\.mod)$'
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.37.1

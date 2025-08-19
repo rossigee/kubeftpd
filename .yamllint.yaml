@@ -36,6 +36,7 @@ rules:
 
 ignore: |
   config/crd/bases/
+  config/rbac/
   chart/*/templates/
   vendor/
   .git/
