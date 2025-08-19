@@ -97,7 +97,7 @@ ftp:
       type: LoadBalancer
       portRange:
         min: 30000
-        max: 30100
+        max: 30019  # 20 ports should be adequate
       annotations: {}
       loadBalancerIP: ""
       loadBalancerSourceRanges: []
@@ -158,9 +158,9 @@ backends:
 
 # Users configuration
 users:
-  # Default admin user
+  # Default admin user - disabled by default for GitOps deployment
   admin:
-    enabled: true
+    enabled: false  # Disable by default to avoid circular dependencies
     username: "admin"
     password: "changeme"  # Change this in production!
     homeDirectory: "/admin"
