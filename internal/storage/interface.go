@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"github.com/goftp/server"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,6 +24,18 @@ type Storage interface {
 	MakeDir(path string) error
 	GetFile(path string, offset int64) (int64, io.ReadCloser, error)
 	PutFile(path string, reader io.Reader, append bool) (int64, error)
+}
+
+// countingReader counts bytes read from the underlying reader
+type countingReader struct {
+	reader    io.Reader
+	bytesRead int64
+}
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.reader.Read(p)
+	atomic.AddInt64(&cr.bytesRead, int64(n))
+	return n, err
 }
 
 // NewStorage creates a new storage implementation based on the user's backend configuration

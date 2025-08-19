@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/goftp/server"
@@ -208,7 +209,7 @@ func (s *filesystemStorage) PutFile(filePath string, reader io.Reader, append bo
 		return 0, fmt.Errorf("failed to put file: %w", err)
 	}
 
-	return countingReader.bytesRead, nil
+	return atomic.LoadInt64(&countingReader.bytesRead), nil
 }
 
 // resolvePath resolves a relative path to an absolute path within the user's home directory
