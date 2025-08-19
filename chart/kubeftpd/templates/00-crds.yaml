@@ -1,4 +1,4 @@
-{{- if .Values.controller.rbac.create }}
+# CRDs are always required for kubeftpd to function
 ---
 {{ (.Files.Get "crd/bases/ftp.golder.org_filesystembackends.yaml") }}
 ---
@@ -7,4 +7,3 @@
 {{ (.Files.Get "crd/bases/ftp.golder.org_users.yaml") }}
 ---
 {{ (.Files.Get "crd/bases/ftp.golder.org_webdavbackends.yaml") }}
-{{- end }}
