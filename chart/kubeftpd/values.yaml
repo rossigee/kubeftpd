@@ -162,7 +162,7 @@ users:
   admin:
     enabled: false  # Disable by default to avoid circular dependencies
     username: "admin"
-    password: "changeme"  # Change this in production!
+    password: ""  # Use external secrets for password management
     homeDirectory: "/admin"
     backend:
       kind: "FilesystemBackend"
