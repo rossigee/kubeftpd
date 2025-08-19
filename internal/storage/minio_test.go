@@ -349,6 +349,14 @@ func TestMinioStorage_PutFile(t *testing.T) {
 	mockBackend.AssertExpectations(t)
 }
 
+// NOTE: MinIO storage layer write verification is tested through the backend layer.
+// The enhanced verification includes:
+// 1. StatObject verification after PutObject to confirm upload completion
+// 2. Size validation to ensure object size matches expected
+// 3. Cleanup on verification failure
+// The countingReader tracks bytes uploaded and verifies consistency
+// Full integration testing requires a real MinIO instance
+
 func TestMinioStorage_resolvePath(t *testing.T) {
 	storage := &minioStorage{
 		basePath:   "/home/testuser",

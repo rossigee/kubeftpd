@@ -263,15 +263,3 @@ func (fi *minioFileInfo) IsDir() bool        { return fi.isDir }
 func (fi *minioFileInfo) Owner() string      { return "" }
 func (fi *minioFileInfo) Group() string      { return "" }
 func (fi *minioFileInfo) Sys() interface{}   { return nil }
-
-// countingReader wraps an io.Reader to count bytes read
-type countingReader struct {
-	reader    io.Reader
-	bytesRead int64
-}
-
-func (cr *countingReader) Read(p []byte) (int, error) {
-	n, err := cr.reader.Read(p)
-	atomic.AddInt64(&cr.bytesRead, int64(n))
-	return n, err
-}

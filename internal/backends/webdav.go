@@ -181,7 +181,10 @@ func (w *webDavBackendImpl) Open(filePath string) (io.ReadCloser, error) {
 func (w *webDavBackendImpl) WriteFile(filePath string, reader io.Reader) (int64, error) {
 	fullPath := w.getFullPath(filePath)
 
-	req, err := http.NewRequest("PUT", w.endpoint+fullPath, reader)
+	// Use a counting reader to track bytes actually sent
+	countingReader := &webdavCountingReader{reader: reader}
+
+	req, err := http.NewRequest("PUT", w.endpoint+fullPath, countingReader)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create PUT request: %w", err)
 	}
@@ -194,12 +197,25 @@ func (w *webDavBackendImpl) WriteFile(filePath string, reader io.Reader) (int64,
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return 0, fmt.Errorf("PUT failed with status: %d", resp.StatusCode)
 	}
 
-	// TODO: Return actual bytes written
-	return 0, nil
+	// Verify the upload by checking file exists and has correct size
+	fileInfo, err := w.Stat(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to verify file %s after upload: %w", filePath, err)
+	}
+
+	// Verify uploaded file size matches what we sent
+	bytesWritten := countingReader.bytesRead
+	if fileInfo.Size != bytesWritten {
+		// Cleanup incomplete upload by attempting to delete
+		_ = w.Remove(filePath)
+		return 0, fmt.Errorf("upload verification failed for %s: sent %d bytes, remote file size %d", filePath, bytesWritten, fileInfo.Size)
+	}
+
+	return bytesWritten, nil
 }
 
 // Remove deletes a file
@@ -386,4 +402,16 @@ func (w *webdavReadSeekCloser) Seek(offset int64, whence int) (int64, error) {
 	default:
 		return 0, fmt.Errorf("invalid whence")
 	}
+}
+
+// webdavCountingReader counts bytes read from the underlying reader
+type webdavCountingReader struct {
+	reader    io.Reader
+	bytesRead int64
+}
+
+func (wcr *webdavCountingReader) Read(p []byte) (int, error) {
+	n, err := wcr.reader.Read(p)
+	wcr.bytesRead += int64(n)
+	return n, err
 }

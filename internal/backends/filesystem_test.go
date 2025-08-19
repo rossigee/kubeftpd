@@ -166,15 +166,72 @@ func TestFilesystemBackend_PutFile(t *testing.T) {
 				fullPath := filepath.Join(testDir, tt.filePath)
 				assert.FileExists(t, fullPath)
 
-				// Verify content
+				// Verify content matches exactly
 				content, err := os.ReadFile(fullPath)
 				assert.NoError(t, err)
 				assert.Equal(t, tt.content, string(content))
+
+				// Verify file size matches expected
+				stat, err := os.Stat(fullPath)
+				assert.NoError(t, err)
+				assert.Equal(t, int64(len(tt.content)), stat.Size())
 			} else {
 				assert.Error(t, err)
 			}
 		})
 	}
+}
+
+func TestFilesystemBackend_PutFile_WriteVerification(t *testing.T) {
+	testDir := createTestDir(t)
+	backend := createTestBackend(t, testDir, false)
+
+	t.Run("write verification with streaming upload", func(t *testing.T) {
+		content := "streaming upload test content"
+		reader := strings.NewReader(content)
+
+		// Test streaming upload (size = -1)
+		err := backend.PutFile("stream.txt", reader, -1)
+		assert.NoError(t, err)
+
+		// Verify file exists and has correct content
+		fullPath := filepath.Join(testDir, "stream.txt")
+		assert.FileExists(t, fullPath)
+
+		savedContent, err := os.ReadFile(fullPath)
+		assert.NoError(t, err)
+		assert.Equal(t, content, string(savedContent))
+
+		// Verify file size
+		stat, err := os.Stat(fullPath)
+		assert.NoError(t, err)
+		assert.Equal(t, int64(len(content)), stat.Size())
+	})
+
+	t.Run("atomic write operation", func(t *testing.T) {
+		content := "atomic write test"
+		reader := strings.NewReader(content)
+
+		err := backend.PutFile("atomic.txt", reader, int64(len(content)))
+		assert.NoError(t, err)
+
+		// Verify no temporary files left behind
+		entries, err := os.ReadDir(testDir)
+		assert.NoError(t, err)
+
+		for _, entry := range entries {
+			assert.False(t, strings.HasSuffix(entry.Name(), ".tmp"),
+				"Temporary file left behind: %s", entry.Name())
+		}
+
+		// Verify final file exists and is complete
+		fullPath := filepath.Join(testDir, "atomic.txt")
+		assert.FileExists(t, fullPath)
+
+		savedContent, err := os.ReadFile(fullPath)
+		assert.NoError(t, err)
+		assert.Equal(t, content, string(savedContent))
+	})
 }
 
 func TestFilesystemBackend_PutFile_ReadOnly(t *testing.T) {

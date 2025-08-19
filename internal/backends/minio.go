@@ -192,9 +192,30 @@ func (m *minioBackendImpl) PutObject(objectName string, reader io.Reader, size i
 	ctx := context.Background()
 	fullPath := m.getFullPath(objectName)
 
-	_, err := m.client.PutObject(ctx, m.bucket, fullPath, reader, size, minio.PutObjectOptions{})
+	// Upload object and get upload info
+	uploadInfo, err := m.client.PutObject(ctx, m.bucket, fullPath, reader, size, minio.PutObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to put object %s: %w", objectName, err)
+	}
+
+	// Verify the upload by checking object exists and has correct size
+	objInfo, err := m.client.StatObject(ctx, m.bucket, fullPath, minio.StatObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to verify object %s after upload: %w", objectName, err)
+	}
+
+	// Verify object size matches what we uploaded
+	if size > 0 && objInfo.Size != size {
+		// Cleanup partial/corrupt object
+		_ = m.client.RemoveObject(ctx, m.bucket, fullPath, minio.RemoveObjectOptions{})
+		return fmt.Errorf("object size verification failed for %s: expected %d, got %d", objectName, size, objInfo.Size)
+	}
+
+	// For streaming uploads (size unknown), verify uploaded size matches reported upload info
+	if size <= 0 && uploadInfo.Size != objInfo.Size {
+		// Cleanup inconsistent object
+		_ = m.client.RemoveObject(ctx, m.bucket, fullPath, minio.RemoveObjectOptions{})
+		return fmt.Errorf("streaming upload verification failed for %s: upload reported %d bytes, object size %d", objectName, uploadInfo.Size, objInfo.Size)
 	}
 
 	return nil

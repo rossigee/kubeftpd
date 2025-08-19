@@ -229,26 +229,97 @@ func (f *filesystemBackendImpl) PutFile(filePath string, reader io.Reader, size 
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	// Create temporary file first
+	// Write to temporary file with verification
 	tempPath := fullPath + ".tmp"
-	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode) // nolint:gosec // File path is validated and controlled by backend
+	bytesWritten, err := f.writeToTempFile(tempPath, reader)
 	if err != nil {
-		return fmt.Errorf("failed to create temporary file %s: %w", tempPath, err)
+		return err
 	}
 
-	// Copy data
-	_, err = io.Copy(file, reader)
-	_ = file.Close()
-
-	if err != nil {
-		_ = os.Remove(tempPath)
-		return fmt.Errorf("failed to write file data: %w", err)
+	// Verify temporary file
+	if err = f.verifyTempFile(tempPath, size, bytesWritten); err != nil {
+		return err
 	}
 
 	// Atomic rename
 	if err = os.Rename(tempPath, fullPath); err != nil {
 		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to finalize file %s: %w", filePath, err)
+	}
+
+	// Final verification
+	return f.verifyFinalFile(fullPath, size, bytesWritten)
+}
+
+// writeToTempFile handles the actual file writing with proper error handling
+func (f *filesystemBackendImpl) writeToTempFile(tempPath string, reader io.Reader) (int64, error) {
+	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.fileMode) // nolint:gosec // File path is validated and controlled by backend
+	if err != nil {
+		return 0, fmt.Errorf("failed to create temporary file %s: %w", tempPath, err)
+	}
+
+	// Copy data and track bytes written
+	bytesWritten, copyErr := io.Copy(file, reader)
+
+	// Force flush to disk before closing
+	if syncErr := file.Sync(); syncErr != nil {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+		return 0, fmt.Errorf("failed to flush file data to disk: %w", syncErr)
+	}
+
+	// Close file and check for any deferred errors
+	if closeErr := file.Close(); closeErr != nil {
+		_ = os.Remove(tempPath)
+		return 0, fmt.Errorf("failed to close file: %w", closeErr)
+	}
+
+	// Check copy operation error after file is properly closed
+	if copyErr != nil {
+		_ = os.Remove(tempPath)
+		return 0, fmt.Errorf("failed to write file data: %w", copyErr)
+	}
+
+	return bytesWritten, nil
+}
+
+// verifyTempFile validates the temporary file before final rename
+func (f *filesystemBackendImpl) verifyTempFile(tempPath string, expectedSize, bytesWritten int64) error {
+	tempStat, statErr := os.Stat(tempPath)
+	if statErr != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("temporary file verification failed: %w", statErr)
+	}
+
+	if expectedSize > 0 && tempStat.Size() != expectedSize {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("file size mismatch: expected %d, got %d", expectedSize, tempStat.Size())
+	}
+
+	if expectedSize < 0 && tempStat.Size() != bytesWritten {
+		// For streaming uploads (size = -1), verify bytes written matches file size
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("streaming upload size mismatch: wrote %d bytes, file size %d", bytesWritten, tempStat.Size())
+	}
+
+	return nil
+}
+
+// verifyFinalFile confirms the final file is correctly stored
+func (f *filesystemBackendImpl) verifyFinalFile(fullPath string, expectedSize, bytesWritten int64) error {
+	finalStat, statErr := os.Stat(fullPath)
+	if statErr != nil {
+		return fmt.Errorf("final file verification failed: %w", statErr)
+	}
+
+	if expectedSize > 0 && finalStat.Size() != expectedSize {
+		_ = os.Remove(fullPath)
+		return fmt.Errorf("final file size verification failed: expected %d, got %d", expectedSize, finalStat.Size())
+	}
+
+	if expectedSize < 0 && finalStat.Size() != bytesWritten {
+		_ = os.Remove(fullPath)
+		return fmt.Errorf("final streaming file size verification failed: expected %d, got %d", bytesWritten, finalStat.Size())
 	}
 
 	return nil

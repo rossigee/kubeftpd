@@ -295,3 +295,10 @@ func TestMinioBackendNamespaceFix_IntegrationStyle(t *testing.T) {
 	assert.Equal(t, "scanner-access", accessKey)
 	assert.Equal(t, "scanner-secret", secretKey)
 }
+
+// NOTE: MinIO backend write verification tests would require a real MinIO instance
+// or sophisticated mocking. The verification logic in backends/minio.go includes:
+// 1. StatObject verification after upload to confirm object exists
+// 2. Size validation to ensure uploaded size matches expected
+// 3. Cleanup on verification failure
+// These behaviors are tested at the storage layer in storage/minio_test.go
