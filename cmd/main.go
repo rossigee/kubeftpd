@@ -78,6 +78,17 @@ type appConfig struct {
 	ftpPort           int
 	ftpPasvPorts      string
 	ftpWelcomeMessage string
+	// Built-in anonymous user settings
+	enableAnonymous      bool
+	anonymousHomeDir     string
+	anonymousBackendKind string
+	anonymousBackendName string
+	// Built-in admin user settings
+	enableAdmin         bool
+	adminPasswordSecret string
+	adminHomeDir        string
+	adminBackendKind    string
+	adminBackendName    string
 }
 
 func getDefaultFTPPort() int {
@@ -106,6 +117,19 @@ func parseFlags() (*appConfig, zap.Options) {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.IntVar(&config.ftpPort, "ftp-port", getDefaultFTPPort(), "The port on which the FTP server listens")
 	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "30000-31000", "The range of ports for FTP passive mode")
+
+	// Built-in anonymous user flags
+	flag.BoolVar(&config.enableAnonymous, "enable-anonymous", false, "Enable anonymous FTP access (RFC 1635)")
+	flag.StringVar(&config.anonymousHomeDir, "anonymous-home-dir", "/pub", "Home directory for anonymous FTP users")
+	flag.StringVar(&config.anonymousBackendKind, "anonymous-backend-kind", "FilesystemBackend", "Backend kind for anonymous users")
+	flag.StringVar(&config.anonymousBackendName, "anonymous-backend-name", "anonymous-backend", "Backend name for anonymous users")
+
+	// Built-in admin user flags
+	flag.BoolVar(&config.enableAdmin, "enable-admin", false, "Enable built-in admin user")
+	flag.StringVar(&config.adminPasswordSecret, "admin-password-secret", "", "Name of Kubernetes Secret containing admin password")
+	flag.StringVar(&config.adminHomeDir, "admin-home-dir", "/", "Home directory for admin user")
+	flag.StringVar(&config.adminBackendKind, "admin-backend-kind", "FilesystemBackend", "Backend kind for admin user")
+	flag.StringVar(&config.adminBackendName, "admin-backend-name", "admin-backend", "Backend name for admin user")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -227,7 +251,27 @@ func setupMetricsServer(config *appConfig, tlsOpts []func(*tls.Config), mux *htt
 	return metricsServerOptions, metricsCertWatcher, nil
 }
 
-func setupControllers(mgr ctrl.Manager) error {
+func setupControllers(mgr ctrl.Manager, config *appConfig) error {
+	// Get the operator namespace for built-in user creation
+	operatorNamespace := "default"
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		operatorNamespace = ns
+	}
+
+	// Create built-in user manager configuration
+	builtInConfig := controller.BuiltInUserConfig{
+		EnableAnonymous:      config.enableAnonymous,
+		AnonymousHomeDir:     config.anonymousHomeDir,
+		AnonymousBackendKind: config.anonymousBackendKind,
+		AnonymousBackendName: config.anonymousBackendName,
+		EnableAdmin:          config.enableAdmin,
+		AdminPasswordSecret:  config.adminPasswordSecret,
+		AdminHomeDir:         config.adminHomeDir,
+		AdminBackendKind:     config.adminBackendKind,
+		AdminBackendName:     config.adminBackendName,
+		Namespace:            operatorNamespace,
+	}
+
 	controllers := []struct {
 		name       string
 		reconciler interface{ SetupWithManager(ctrl.Manager) error }
@@ -236,6 +280,7 @@ func setupControllers(mgr ctrl.Manager) error {
 		{"MinioBackend", &controller.MinioBackendReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
 		{"WebDavBackend", &controller.WebDavBackendReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
 		{"FilesystemBackend", &controller.FilesystemBackendReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}},
+		{"BuiltInUserManager", &controller.BuiltInUserManager{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Config: builtInConfig}},
 	}
 
 	for _, c := range controllers {
@@ -307,7 +352,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := setupControllers(mgr); err != nil {
+	if err := setupControllers(mgr, config); err != nil {
 		setupLog.Error(err, "Failed to setup controllers")
 		os.Exit(1)
 	}
@@ -320,6 +365,41 @@ func main() {
 	if err := setupHealthChecks(mgr); err != nil {
 		setupLog.Error(err, "Failed to setup health checks")
 		os.Exit(1)
+	}
+
+	// Trigger initial built-in user reconciliation
+	// This will create/update/delete built-in User CRs based on configuration
+	ctx := context.Background()
+	operatorNamespace := "default"
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		operatorNamespace = ns
+	}
+
+	builtInConfig := controller.BuiltInUserConfig{
+		EnableAnonymous:      config.enableAnonymous,
+		AnonymousHomeDir:     config.anonymousHomeDir,
+		AnonymousBackendKind: config.anonymousBackendKind,
+		AnonymousBackendName: config.anonymousBackendName,
+		EnableAdmin:          config.enableAdmin,
+		AdminPasswordSecret:  config.adminPasswordSecret,
+		AdminHomeDir:         config.adminHomeDir,
+		AdminBackendKind:     config.adminBackendKind,
+		AdminBackendName:     config.adminBackendName,
+		Namespace:            operatorNamespace,
+	}
+
+	builtInUserManager := &controller.BuiltInUserManager{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Config: builtInConfig,
+	}
+
+	if err := builtInUserManager.UpdateConfig(ctx, builtInConfig); err != nil {
+		setupLog.Error(err, "Failed to reconcile built-in users")
+		// Don't exit here as this might be a temporary error
+		// The controller will retry during normal reconciliation
+	} else {
+		setupLog.Info("Successfully reconciled built-in users based on configuration")
 	}
 
 	// Start FTP server

@@ -478,3 +478,204 @@ func TestKubeAuth_SecretBasedPasswordCustomKey(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, authenticated)
 }
+
+// TestKubeAuth_CheckPasswdUserTypes tests authentication for different user types
+func TestKubeAuth_CheckPasswdUserTypes(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = ftpv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Create test users for each type
+	regularUser := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "regular-user",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Type:          "regular",
+			Username:      "regular",
+			Password:      "regularpass",
+			HomeDirectory: "/home/regular",
+			Enabled:       true,
+			Backend: ftpv1.BackendReference{
+				Kind: "FilesystemBackend",
+				Name: "test-backend",
+			},
+		},
+	}
+
+	anonymousUser := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "anonymous-user",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Type:          "anonymous",
+			Username:      "anonymous",
+			HomeDirectory: "/pub",
+			Enabled:       true,
+			Backend: ftpv1.BackendReference{
+				Kind: "FilesystemBackend",
+				Name: "anonymous-backend",
+			},
+			Permissions: ftpv1.UserPermissions{
+				Read:   true,
+				Write:  false,
+				Delete: false,
+				List:   true,
+			},
+		},
+	}
+
+	// Create admin password secret
+	adminSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "admin-secret",
+			Namespace: "default",
+		},
+		Data: map[string][]byte{
+			"password": []byte("adminpass"),
+		},
+	}
+
+	adminUser := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "admin-user",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Type:     "admin",
+			Username: "admin",
+			PasswordSecret: &ftpv1.UserSecretRef{
+				Name: "admin-secret",
+				Key:  "password",
+			},
+			HomeDirectory: "/",
+			Enabled:       true,
+			Backend: ftpv1.BackendReference{
+				Kind: "FilesystemBackend",
+				Name: "admin-backend",
+			},
+			Permissions: ftpv1.UserPermissions{
+				Read:   true,
+				Write:  true,
+				Delete: true,
+				List:   true,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(regularUser, anonymousUser, adminUser, adminSecret).
+		Build()
+
+	auth := NewKubeAuth(fakeClient)
+
+	tests := []struct {
+		name        string
+		username    string
+		password    string
+		expectAuth  bool
+		description string
+	}{
+		{
+			name:        "Regular user with correct password",
+			username:    "regular",
+			password:    "regularpass",
+			expectAuth:  true,
+			description: "Regular user authentication should work with correct password",
+		},
+		{
+			name:        "Regular user with wrong password",
+			username:    "regular",
+			password:    "wrongpass",
+			expectAuth:  false,
+			description: "Regular user authentication should fail with wrong password",
+		},
+		{
+			name:        "Anonymous user with any password",
+			username:    "anonymous",
+			password:    "any@email.com",
+			expectAuth:  true,
+			description: "Anonymous user should authenticate with any password (RFC 1635)",
+		},
+		{
+			name:        "Anonymous user with empty password",
+			username:    "anonymous",
+			password:    "",
+			expectAuth:  true,
+			description: "Anonymous user should authenticate with empty password",
+		},
+		{
+			name:        "Admin user with correct password",
+			username:    "admin",
+			password:    "adminpass",
+			expectAuth:  true,
+			description: "Admin user should authenticate with correct secret password",
+		},
+		{
+			name:        "Admin user with wrong password",
+			username:    "admin",
+			password:    "wrongpass",
+			expectAuth:  false,
+			description: "Admin user should fail with wrong password",
+		},
+		{
+			name:        "Nonexistent user",
+			username:    "nonexistent",
+			password:    "anypass",
+			expectAuth:  false,
+			description: "Nonexistent user should fail authentication",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authenticated, err := auth.CheckPasswd(nil, tt.username, tt.password)
+			assert.NoError(t, err, "CheckPasswd should not return error")
+			assert.Equal(t, tt.expectAuth, authenticated, tt.description)
+		})
+	}
+}
+
+// TestKubeAuth_UserTypeDefaults tests that default user type is handled correctly
+func TestKubeAuth_UserTypeDefaults(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = ftpv1.AddToScheme(scheme)
+
+	// Create user without explicit type (should default to "regular")
+	userWithoutType := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-without-type",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			// Type field not set - should default to "regular"
+			Username:      "testuser",
+			Password:      "testpass",
+			HomeDirectory: "/home/testuser",
+			Enabled:       true,
+			Backend: ftpv1.BackendReference{
+				Kind: "FilesystemBackend",
+				Name: "test-backend",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(userWithoutType).
+		Build()
+
+	auth := NewKubeAuth(fakeClient)
+
+	// Test that user without type behaves as regular user
+	authenticated, err := auth.CheckPasswd(nil, "testuser", "testpass")
+	assert.NoError(t, err)
+	assert.True(t, authenticated, "User without type should authenticate as regular user")
+
+	authenticated, err = auth.CheckPasswd(nil, "testuser", "wrongpass")
+	assert.NoError(t, err)
+	assert.False(t, authenticated, "User without type should fail with wrong password")
+}

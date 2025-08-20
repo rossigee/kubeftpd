@@ -30,6 +30,12 @@ type UserSpec struct {
 	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9_-]+$"
 	Username string `json:"username"`
 
+	// Type indicates the type of user (regular, anonymous, admin)
+	// +kubebuilder:default="regular"
+	// +kubebuilder:validation:Enum=regular;anonymous;admin
+	// +optional
+	Type string `json:"type,omitempty"`
+
 	// Password is the FTP password (plaintext, not recommended for production)
 	// +optional
 	Password string `json:"password,omitempty"`

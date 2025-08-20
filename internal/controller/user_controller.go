@@ -107,13 +107,18 @@ func (r *UserReconciler) validateUser(ctx context.Context, user *ftpv1.User) err
 	if user.Spec.Username == "" {
 		return fmt.Errorf("username is required")
 	}
-	// Validate that either password or passwordSecret is provided
-	if user.Spec.Password == "" && user.Spec.PasswordSecret == nil {
-		return fmt.Errorf("either password or passwordSecret is required")
+
+	// Set default user type if not specified
+	userType := user.Spec.Type
+	if userType == "" {
+		userType = "regular"
 	}
-	if user.Spec.Password != "" && user.Spec.PasswordSecret != nil {
-		return fmt.Errorf("cannot specify both password and passwordSecret")
+
+	// Validate password requirements based on user type
+	if err := r.validateUserType(user, userType); err != nil {
+		return err
 	}
+
 	if user.Spec.HomeDirectory == "" {
 		return fmt.Errorf("homeDirectory is required")
 	}
@@ -156,6 +161,65 @@ func (r *UserReconciler) validateUser(ctx context.Context, user *ftpv1.User) err
 		return fmt.Errorf("unsupported backend kind: %s", user.Spec.Backend.Kind)
 	}
 
+	return nil
+}
+
+// validateUserType validates user type specific requirements
+func (r *UserReconciler) validateUserType(user *ftpv1.User, userType string) error {
+	switch userType {
+	case "anonymous":
+		return r.validateAnonymousUser(user)
+	case "admin":
+		return r.validateAdminUser(user)
+	case "regular":
+		return r.validateRegularUser(user)
+	default:
+		return fmt.Errorf("invalid user type: %s (must be regular, anonymous, or admin)", userType)
+	}
+}
+
+// validateAnonymousUser validates anonymous user requirements
+func (r *UserReconciler) validateAnonymousUser(user *ftpv1.User) error {
+	// Anonymous users don't need password or passwordSecret (RFC 1635)
+	if user.Spec.Password != "" || user.Spec.PasswordSecret != nil {
+		return fmt.Errorf("anonymous users should not have password or passwordSecret specified")
+	}
+	// Ensure username matches expected value
+	if user.Spec.Username != "anonymous" {
+		return fmt.Errorf("anonymous type users must have username 'anonymous'")
+	}
+	// Ensure read-only permissions for anonymous (RFC 1635)
+	if user.Spec.Permissions.Write || user.Spec.Permissions.Delete {
+		return fmt.Errorf("anonymous users must have read-only permissions (RFC 1635)")
+	}
+	return nil
+}
+
+// validateAdminUser validates admin user requirements
+func (r *UserReconciler) validateAdminUser(user *ftpv1.User) error {
+	// Admin users must use passwordSecret, not plaintext password
+	if user.Spec.Password != "" {
+		return fmt.Errorf("admin users must use passwordSecret, not plaintext password")
+	}
+	if user.Spec.PasswordSecret == nil {
+		return fmt.Errorf("admin users require passwordSecret")
+	}
+	// Ensure username matches expected value
+	if user.Spec.Username != "admin" {
+		return fmt.Errorf("admin type users must have username 'admin'")
+	}
+	return nil
+}
+
+// validateRegularUser validates regular user requirements
+func (r *UserReconciler) validateRegularUser(user *ftpv1.User) error {
+	// Regular users need either password or passwordSecret
+	if user.Spec.Password == "" && user.Spec.PasswordSecret == nil {
+		return fmt.Errorf("either password or passwordSecret is required")
+	}
+	if user.Spec.Password != "" && user.Spec.PasswordSecret != nil {
+		return fmt.Errorf("cannot specify both password and passwordSecret")
+	}
 	return nil
 }
 

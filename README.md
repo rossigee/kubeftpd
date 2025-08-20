@@ -16,6 +16,7 @@ KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a clo
 
 - **Kubernetes-Native**: Uses CRDs for user and backend configuration
 - **Multiple Storage Backends**: Support for MinIO/S3, WebDAV endpoints, and local filesystem storage
+- **Built-in User Types**: Anonymous FTP (RFC 1635) and admin users with automatic User CR management
 - **PASV Mode Support**: Currently supports passive FTP mode with active mode planned
 - **RBAC Integration**: Full Kubernetes RBAC support for access control
 - **Health & Metrics**: Built-in health checks, JSON logging, and metrics endpoints
@@ -206,7 +207,90 @@ ftp ftp.example.com 21
 
 ### User CRD
 
-Defines FTP users with their credentials, permissions, and backend configuration. Supports both plaintext passwords (development) and Kubernetes Secrets (production).
+Defines FTP users with their credentials, permissions, and backend configuration. Supports both plaintext passwords (development) and Kubernetes Secrets (production). Three user types are supported:
+
+- **regular**: Standard FTP users (default)
+- **anonymous**: RFC 1635 compliant anonymous FTP access
+- **admin**: Administrative users with full permissions
+
+## Built-in Users
+
+KubeFTPd supports automatic management of built-in users through configuration flags. These users are created as User CRs and managed by the BuiltInUserManager controller.
+
+### Anonymous User
+
+Enable RFC 1635 compliant anonymous FTP access:
+
+```bash
+# Enable anonymous user with filesystem backend
+kubeftpd --enable-anonymous \
+  --anonymous-home-dir="/pub" \
+  --anonymous-backend-kind="FilesystemBackend" \
+  --anonymous-backend-name="anonymous-backend"
+```
+
+**Anonymous User Characteristics:**
+- Username: `anonymous`
+- Password: Any password accepted (RFC 1635 compliance)
+- Permissions: Read-only access
+- Created as User CR: `builtin-anonymous`
+
+### Admin User
+
+Enable built-in admin user with secret-based authentication:
+
+```bash
+# First create the admin password secret
+kubectl create secret generic admin-secret \
+  --from-literal=password="AdminPassword123!"
+
+# Enable admin user
+kubeftpd --enable-admin \
+  --admin-password-secret="admin-secret" \
+  --admin-home-dir="/" \
+  --admin-backend-kind="FilesystemBackend" \
+  --admin-backend-name="admin-backend"
+```
+
+**Admin User Characteristics:**
+- Username: `admin`
+- Password: Retrieved from Kubernetes Secret
+- Permissions: Full access (read, write, delete, list)
+- Created as User CR: `builtin-admin`
+
+### Lifecycle Management
+
+Built-in users are automatically:
+- **Created** when enabled via configuration flags
+- **Updated** when configuration changes
+- **Deleted** when disabled
+- **Labeled** with `kubeftpd.golder.org/builtin: true`
+
+Example of automatically created User CR:
+
+```yaml
+apiVersion: ftp.golder.org/v1
+kind: User
+metadata:
+  name: builtin-anonymous
+  namespace: default
+  labels:
+    kubeftpd.golder.org/builtin: "true"
+    kubeftpd.golder.org/type: "anonymous"
+spec:
+  type: "anonymous"
+  username: "anonymous"
+  homeDirectory: "/pub"
+  enabled: true
+  backend:
+    kind: "FilesystemBackend"
+    name: "anonymous-backend"
+  permissions:
+    read: true
+    write: false
+    delete: false
+    list: true
+```
 
 **Password Methods (mutually exclusive):**
 
@@ -383,6 +467,20 @@ spec:
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
 | `LOG_FORMAT` | Log format (json, text) | `json` |
 | `HTTP_PORT` | HTTP server port (metrics, health, status) | `8080` |
+
+### Built-in User Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `--enable-anonymous` | Enable anonymous FTP access (RFC 1635) | `false` |
+| `--anonymous-home-dir` | Home directory for anonymous users | `/pub` |
+| `--anonymous-backend-kind` | Backend kind for anonymous users | `FilesystemBackend` |
+| `--anonymous-backend-name` | Backend name for anonymous users | `anonymous-backend` |
+| `--enable-admin` | Enable built-in admin user | `false` |
+| `--admin-password-secret` | Kubernetes Secret name for admin password | `""` |
+| `--admin-home-dir` | Home directory for admin user | `/` |
+| `--admin-backend-kind` | Backend kind for admin user | `FilesystemBackend` |
+| `--admin-backend-name` | Backend name for admin user | `admin-backend` |
 
 ### OpenTelemetry Configuration
 

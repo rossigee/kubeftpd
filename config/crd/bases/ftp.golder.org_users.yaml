@@ -112,6 +112,15 @@ spec:
                     description: Write permission for uploading files
                     type: boolean
                 type: object
+              type:
+                default: regular
+                description: Type indicates the type of user (regular, anonymous,
+                  admin)
+                enum:
+                - regular
+                - anonymous
+                - admin
+                type: string
               username:
                 description: Username is the FTP username for authentication
                 pattern: ^[a-zA-Z0-9_-]+$

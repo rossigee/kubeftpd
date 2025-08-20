@@ -71,80 +71,108 @@ func NewKubeAuth(kubeClient client.Client) *KubeAuth {
 func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string) (bool, error) {
 	log.Printf("Authenticating user: %s", username)
 
-	// First try to get from cache
-	if cachedUser, ok := auth.userCache.Load(username); ok {
-		user := cachedUser.(*ftpv1.User)
-		if !user.Spec.Enabled {
-			log.Printf("User %s is disabled", username)
-			return false, nil
-		}
+	// Get user from cache or Kubernetes
+	user := auth.GetUser(username)
+	if user == nil {
+		log.Printf("User %s not found", username)
+		metrics.RecordUserLogin(username, "user_not_found")
+		return false, nil
+	}
 
-		userPassword, err := auth.getUserPassword(user)
+	// Check if user is enabled
+	if !user.Spec.Enabled {
+		log.Printf("User %s is disabled", username)
+		authFailures.WithLabelValues(username, "user_disabled").Inc()
+		metrics.RecordUserLogin(username, "failure")
+		return false, nil
+	}
+
+	// Handle authentication based on user type
+	userType := user.Spec.Type
+	if userType == "" {
+		userType = "regular" // default
+	}
+
+	var authenticated bool
+	var err error
+
+	switch userType {
+	case "anonymous":
+		// RFC 1635: anonymous FTP allows any password (typically email)
+		authenticated = true
+		log.Printf("Anonymous user authenticated (RFC 1635)")
+		authAttempts.WithLabelValues(username, "anonymous", "success").Inc()
+	case "admin":
+		// Admin users must authenticate against secret
+		authenticated, err = auth.checkAdminPassword(user, password)
 		if err != nil {
-			log.Printf("Failed to get password for user %s: %v", username, err)
+			log.Printf("Failed to check admin password for user %s: %v", username, err)
+			authFailures.WithLabelValues(username, "secret_error").Inc()
+			authAttempts.WithLabelValues(username, "admin", "failure").Inc()
 			return false, nil
 		}
-
-		if userPassword == password {
-			log.Printf("User %s authenticated from cache", username)
-			auth.setLastAuthUser(username)
-			// Record successful authentication
+		if authenticated {
+			log.Printf("Admin user %s authenticated successfully", username)
+			authAttempts.WithLabelValues(username, "admin", "success").Inc()
+		} else {
+			log.Printf("Invalid password for admin user %s", username)
+			authFailures.WithLabelValues(username, "invalid_password").Inc()
+			authAttempts.WithLabelValues(username, "admin", "failure").Inc()
+		}
+	default: // "regular"
+		// Regular users use existing password validation logic
+		authenticated, err = auth.checkRegularUserPassword(user, password)
+		if err != nil {
+			log.Printf("Failed to check password for user %s: %v", username, err)
+			authFailures.WithLabelValues(username, "secret_error").Inc()
+			authAttempts.WithLabelValues(username, "regular", "failure").Inc()
+			return false, nil
+		}
+		if authenticated {
+			log.Printf("User %s authenticated successfully", username)
 			method := "plaintext"
 			if user.Spec.PasswordSecret != nil {
 				method = "secret"
 			}
 			authAttempts.WithLabelValues(username, method, "success").Inc()
-			metrics.RecordUserLogin(username, "success")
-			return true, nil
 		} else {
 			log.Printf("Invalid password for user %s", username)
 			authFailures.WithLabelValues(username, "invalid_password").Inc()
-			authAttempts.WithLabelValues(username, "unknown", "failure").Inc()
-			metrics.RecordUserLogin(username, "failure")
-			return false, nil
+			authAttempts.WithLabelValues(username, "regular", "failure").Inc()
 		}
 	}
 
-	// If not in cache or authentication failed, refresh from Kubernetes
-	userList := &ftpv1.UserList{}
-	if err := auth.client.List(context.TODO(), userList); err != nil {
-		log.Printf("Failed to list users: %v", err)
+	if authenticated {
+		auth.setLastAuthUser(username)
+		metrics.RecordUserLogin(username, "success")
+		return true, nil
+	}
+
+	metrics.RecordUserLogin(username, "failure")
+	return false, nil
+}
+
+// checkRegularUserPassword validates regular user passwords (existing logic)
+func (auth *KubeAuth) checkRegularUserPassword(user *ftpv1.User, password string) (bool, error) {
+	userPassword, err := auth.getUserPassword(user)
+	if err != nil {
+		return false, err
+	}
+	return userPassword == password, nil
+}
+
+// checkAdminPassword validates admin user passwords against Kubernetes Secret
+func (auth *KubeAuth) checkAdminPassword(user *ftpv1.User, password string) (bool, error) {
+	if user.Spec.PasswordSecret == nil {
+		return false, fmt.Errorf("admin user has no passwordSecret configured")
+	}
+
+	userPassword, err := auth.getPasswordFromSecret(user.Spec.PasswordSecret, user.Namespace)
+	if err != nil {
 		return false, err
 	}
 
-	for _, user := range userList.Items {
-		if user.Spec.Username == username {
-			// Update cache with fresh data
-			userCopy := user.DeepCopy()
-			auth.userCache.Store(username, userCopy)
-
-			if !user.Spec.Enabled {
-				log.Printf("User %s is disabled", username)
-				return false, nil
-			}
-
-			userPassword, err := auth.getUserPassword(userCopy)
-			if err != nil {
-				log.Printf("Failed to get password for user %s: %v", username, err)
-				return false, nil
-			}
-
-			if userPassword == password {
-				log.Printf("User %s authenticated successfully", username)
-				auth.setLastAuthUser(username)
-				metrics.RecordUserLogin(username, "success")
-				return true, nil
-			} else {
-				log.Printf("Invalid password for user %s", username)
-				metrics.RecordUserLogin(username, "failure")
-				return false, nil
-			}
-		}
-	}
-
-	log.Printf("User %s not found", username)
-	metrics.RecordUserLogin(username, "user_not_found")
-	return false, nil
+	return userPassword == password, nil
 }
 
 // GetUser returns a user from cache or loads from Kubernetes

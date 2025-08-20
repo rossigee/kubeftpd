@@ -34,6 +34,331 @@ import (
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 )
 
+// TestUserTypeValidation tests the validation of different user types
+func TestUserTypeValidation(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = ftpv1.AddToScheme(scheme)
+
+	tests := []struct {
+		name        string
+		user        *ftpv1.User
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "Valid regular user with password",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-user", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:          "regular",
+					Username:      "testuser",
+					Password:      "testpass",
+					HomeDirectory: "/home/testuser",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "test-backend",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid regular user with password secret",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-user", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:     "regular",
+					Username: "testuser",
+					PasswordSecret: &ftpv1.UserSecretRef{
+						Name: "test-secret",
+						Key:  "password",
+					},
+					HomeDirectory: "/home/testuser",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "test-backend",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid anonymous user",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "anonymous-user", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:          "anonymous",
+					Username:      "anonymous",
+					HomeDirectory: "/pub",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "anonymous-backend",
+					},
+					Permissions: ftpv1.UserPermissions{
+						Read:   true,
+						Write:  false,
+						Delete: false,
+						List:   true,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Valid admin user",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "admin-user", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:     "admin",
+					Username: "admin",
+					PasswordSecret: &ftpv1.UserSecretRef{
+						Name: "admin-secret",
+						Key:  "password",
+					},
+					HomeDirectory: "/",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "admin-backend",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Invalid anonymous user with password",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "invalid-anonymous", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:          "anonymous",
+					Username:      "anonymous",
+					Password:      "shouldnotbeset",
+					HomeDirectory: "/pub",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "anonymous-backend",
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "anonymous users should not have password or passwordSecret specified",
+		},
+		{
+			name: "Invalid admin user with plaintext password",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "invalid-admin", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:          "admin",
+					Username:      "admin",
+					Password:      "plaintext",
+					HomeDirectory: "/",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "admin-backend",
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "admin users must use passwordSecret, not plaintext password",
+		},
+		{
+			name: "Invalid anonymous user with wrong username",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "invalid-anon-username", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:          "anonymous",
+					Username:      "wrongname",
+					HomeDirectory: "/pub",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "anonymous-backend",
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "anonymous type users must have username 'anonymous'",
+		},
+		{
+			name: "Invalid anonymous user with write permissions",
+			user: &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "invalid-anon-write", Namespace: "default"},
+				Spec: ftpv1.UserSpec{
+					Type:          "anonymous",
+					Username:      "anonymous",
+					HomeDirectory: "/pub",
+					Backend: ftpv1.BackendReference{
+						Kind: "FilesystemBackend",
+						Name: "anonymous-backend",
+					},
+					Permissions: ftpv1.UserPermissions{
+						Read:   true,
+						Write:  true, // Should not be allowed for anonymous
+						Delete: false,
+						List:   true,
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "anonymous users must have read-only permissions (RFC 1635)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create fake backend for validation
+			backend := &ftpv1.FilesystemBackend{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      tt.user.Spec.Backend.Name,
+					Namespace: "default",
+				},
+				Spec: ftpv1.FilesystemBackendSpec{
+					BasePath: "/tmp/test",
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(backend).
+				Build()
+
+			reconciler := &UserReconciler{
+				Client: fakeClient,
+				Scheme: scheme,
+			}
+
+			ctx := context.Background()
+			err := reconciler.validateUser(ctx, tt.user)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestBuiltInUserManager tests the BuiltInUserManager functionality
+func TestBuiltInUserManager(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = ftpv1.AddToScheme(scheme)
+
+	tests := []struct {
+		name            string
+		config          BuiltInUserConfig
+		expectAnonymous bool
+		expectAdmin     bool
+	}{
+		{
+			name: "Both anonymous and admin enabled",
+			config: BuiltInUserConfig{
+				EnableAnonymous:      true,
+				AnonymousHomeDir:     "/pub",
+				AnonymousBackendKind: "FilesystemBackend",
+				AnonymousBackendName: "anonymous-backend",
+				EnableAdmin:          true,
+				AdminPasswordSecret:  "admin-secret",
+				AdminHomeDir:         "/",
+				AdminBackendKind:     "FilesystemBackend",
+				AdminBackendName:     "admin-backend",
+				Namespace:            "default",
+			},
+			expectAnonymous: true,
+			expectAdmin:     true,
+		},
+		{
+			name: "Only anonymous enabled",
+			config: BuiltInUserConfig{
+				EnableAnonymous:      true,
+				AnonymousHomeDir:     "/pub",
+				AnonymousBackendKind: "FilesystemBackend",
+				AnonymousBackendName: "anonymous-backend",
+				EnableAdmin:          false,
+				Namespace:            "default",
+			},
+			expectAnonymous: true,
+			expectAdmin:     false,
+		},
+		{
+			name: "Only admin enabled",
+			config: BuiltInUserConfig{
+				EnableAnonymous:     false,
+				EnableAdmin:         true,
+				AdminPasswordSecret: "admin-secret",
+				AdminHomeDir:        "/",
+				AdminBackendKind:    "FilesystemBackend",
+				AdminBackendName:    "admin-backend",
+				Namespace:           "default",
+			},
+			expectAnonymous: false,
+			expectAdmin:     true,
+		},
+		{
+			name: "Both disabled",
+			config: BuiltInUserConfig{
+				EnableAnonymous: false,
+				EnableAdmin:     false,
+				Namespace:       "default",
+			},
+			expectAnonymous: false,
+			expectAdmin:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				Build()
+
+			manager := &BuiltInUserManager{
+				Client: fakeClient,
+				Scheme: scheme,
+				Config: tt.config,
+			}
+
+			ctx := context.Background()
+			err := manager.reconcileBuiltInUsers(ctx)
+			assert.NoError(t, err)
+
+			// Check if anonymous user was created/deleted as expected
+			anonymousUser := &ftpv1.User{}
+			err = fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "builtin-anonymous",
+				Namespace: tt.config.Namespace,
+			}, anonymousUser)
+
+			if tt.expectAnonymous {
+				assert.NoError(t, err, "Anonymous user should exist")
+				assert.Equal(t, "anonymous", anonymousUser.Spec.Type)
+				assert.Equal(t, "anonymous", anonymousUser.Spec.Username)
+				assert.False(t, anonymousUser.Spec.Permissions.Write, "Anonymous should be read-only")
+			} else {
+				assert.True(t, errors.IsNotFound(err), "Anonymous user should not exist")
+			}
+
+			// Check if admin user was created/deleted as expected
+			adminUser := &ftpv1.User{}
+			err = fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "builtin-admin",
+				Namespace: tt.config.Namespace,
+			}, adminUser)
+
+			if tt.expectAdmin {
+				assert.NoError(t, err, "Admin user should exist")
+				assert.Equal(t, "admin", adminUser.Spec.Type)
+				assert.Equal(t, "admin", adminUser.Spec.Username)
+				assert.True(t, adminUser.Spec.Permissions.Write, "Admin should have write permissions")
+				assert.NotNil(t, adminUser.Spec.PasswordSecret, "Admin should have password secret")
+			} else {
+				assert.True(t, errors.IsNotFound(err), "Admin user should not exist")
+			}
+		})
+	}
+}
+
 var _ = Describe("User Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
