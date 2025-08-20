@@ -61,6 +61,12 @@ spec:
                 - kind
                 - name
                 type: object
+              chroot:
+                default: true
+                description: |-
+                  Chroot restricts user access to their home directory (jail)
+                  When enabled, users cannot navigate outside their home directory
+                type: boolean
               enabled:
                 default: true
                 description: Enabled controls whether the user account is active

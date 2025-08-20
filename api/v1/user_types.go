@@ -53,6 +53,12 @@ type UserSpec struct {
 	// +kubebuilder:validation:Pattern="^/.*"
 	HomeDirectory string `json:"homeDirectory"`
 
+	// Chroot restricts user access to their home directory (jail)
+	// When enabled, users cannot navigate outside their home directory
+	// +kubebuilder:default=true
+	// +optional
+	Chroot bool `json:"chroot,omitempty"`
+
 	// Enabled controls whether the user account is active
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled,omitempty"`

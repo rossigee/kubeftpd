@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -163,19 +165,76 @@ func (driver *KubeDriver) Init(conn *server.Context) {
 	}
 }
 
+// isPathWithinHome validates that the given path stays within the user's home directory
+func isPathWithinHome(requestedPath, homeDir string) bool {
+	// Clean and normalize both paths
+	cleanRequested := filepath.Clean(requestedPath)
+	cleanHome := filepath.Clean(homeDir)
+
+	// Handle relative paths by resolving against home directory
+	if !filepath.IsAbs(cleanRequested) {
+		cleanRequested = filepath.Join(cleanHome, cleanRequested)
+		cleanRequested = filepath.Clean(cleanRequested)
+	}
+
+	// Ensure both paths end with separator for proper prefix matching
+	if !strings.HasSuffix(cleanHome, "/") {
+		cleanHome += "/"
+	}
+	if !strings.HasSuffix(cleanRequested, "/") {
+		cleanRequested += "/"
+	}
+
+	// Check if requested path is within or equal to home directory
+	return strings.HasPrefix(cleanRequested, cleanHome) || cleanRequested == strings.TrimSuffix(cleanHome, "/")
+}
+
+// validateChrootPath checks if a path operation is allowed for a chroot user
+func (driver *KubeDriver) validateChrootPath(path string) error {
+	if driver.user == nil {
+		return fmt.Errorf("user not initialized")
+	}
+
+	// If chroot is disabled, allow all paths
+	if !driver.user.Spec.Chroot {
+		return nil
+	}
+
+	homeDir := driver.user.Spec.HomeDirectory
+	if !isPathWithinHome(path, homeDir) {
+		log.Printf("[%s] CHROOT VIOLATION: Attempted access to '%s' outside home directory '%s'",
+			driver.getAuthenticatedUsername(), path, homeDir)
+		return fmt.Errorf("access denied: path outside home directory")
+	}
+
+	return nil
+}
+
 func (driver *KubeDriver) ChangeDir(ctx *server.Context, path string) error {
-	log.Printf("ChangeDir: %s", path)
+	log.Printf("[%s] ChangeDir: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		return err
 	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
+		return err
+	}
+
 	return driver.storageImpl.ChangeDir(path)
 }
 
 func (driver *KubeDriver) Stat(ctx *server.Context, path string) (os.FileInfo, error) {
-	log.Printf("Stat: %s", path)
+	log.Printf("[%s] Stat: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		return nil, err
 	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
+		return nil, err
+	}
+
 	return driver.storageImpl.Stat(path)
 }
 
@@ -183,6 +242,11 @@ func (driver *KubeDriver) ListDir(ctx *server.Context, path string, callback fun
 	log.Printf("[%s] LIST: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		log.Printf("[%s] LIST FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
 		return err
 	}
 
@@ -202,6 +266,11 @@ func (driver *KubeDriver) DeleteDir(ctx *server.Context, path string) error {
 		return err
 	}
 
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
+		return err
+	}
+
 	err := driver.storageImpl.DeleteDir(path)
 	if err != nil {
 		log.Printf("[%s] RMDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
@@ -215,6 +284,11 @@ func (driver *KubeDriver) DeleteFile(ctx *server.Context, path string) error {
 	log.Printf("[%s] DELETE: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		log.Printf("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
 		return err
 	}
 
@@ -234,6 +308,14 @@ func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) e
 		return err
 	}
 
+	// Validate chroot restrictions for both paths
+	if err := driver.validateChrootPath(fromPath); err != nil {
+		return err
+	}
+	if err := driver.validateChrootPath(toPath); err != nil {
+		return err
+	}
+
 	err := driver.storageImpl.Rename(fromPath, toPath)
 	if err != nil {
 		log.Printf("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
@@ -247,6 +329,11 @@ func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
 	log.Printf("[%s] MKDIR: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		log.Printf("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
 		return err
 	}
 
@@ -278,6 +365,17 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		if span != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.String("ftp.status", "error"))
+		}
+		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
+		return 0, nil, err
+	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
 		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		if span != nil {
 			span.RecordError(err)
@@ -342,6 +440,17 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		if span != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.String("ftp.status", "error"))
+		}
+		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
+		return 0, err
+	}
+
+	// Validate chroot restrictions
+	if err := driver.validateChrootPath(path); err != nil {
 		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
 		if span != nil {
 			span.RecordError(err)
