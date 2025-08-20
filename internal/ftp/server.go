@@ -37,18 +37,20 @@ func isTracingEnabled() bool {
 
 // Server represents the KubeFTPd server
 type Server struct {
-	Port      int
-	PasvPorts string
-	client    client.Client
-	server    *server.Server
+	Port           int
+	PasvPorts      string
+	WelcomeMessage string
+	client         client.Client
+	server         *server.Server
 }
 
 // NewServer creates a new FTP server instance
-func NewServer(port int, pasvPorts string, kubeClient client.Client) *Server {
+func NewServer(port int, pasvPorts string, welcomeMessage string, kubeClient client.Client) *Server {
 	return &Server{
-		Port:      port,
-		PasvPorts: pasvPorts,
-		client:    kubeClient,
+		Port:           port,
+		PasvPorts:      pasvPorts,
+		WelcomeMessage: welcomeMessage,
+		client:         kubeClient,
 	}
 }
 
@@ -66,12 +68,14 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	opts := &server.Options{
-		Driver:       driver,
-		Port:         s.Port,
-		Hostname:     "",
-		Auth:         auth,
-		Logger:       &KubeLogger{},
-		PassivePorts: s.PasvPorts,
+		Driver:         driver,
+		Port:           s.Port,
+		Hostname:       "",
+		Auth:           auth,
+		Logger:         &KubeLogger{},
+		PassivePorts:   s.PasvPorts,
+		WelcomeMessage: s.WelcomeMessage,
+		Perm:           driver, // KubeDriver implements the Perm interface
 	}
 
 	ftpServer, err := server.NewServer(opts)
@@ -435,5 +439,54 @@ func (driver *KubeDriver) Close() error {
 		metrics.RecordConnectionClosed(driver.authenticatedUser, sessionDuration)
 		metrics.RecordUserSession(driver.authenticatedUser, sessionDuration)
 	}
+	return nil
+}
+
+// Perm interface implementation for goftp.io/server/v2
+// These methods provide file ownership and permission information
+
+func (driver *KubeDriver) GetOwner(path string) (string, error) {
+	// Return the authenticated user as the owner of all files
+	if err := driver.ensureUserInitialized(); err != nil {
+		return "", err
+	}
+	return driver.authenticatedUser, nil
+}
+
+func (driver *KubeDriver) GetGroup(path string) (string, error) {
+	// Return a default group - could be enhanced to use user groups
+	if err := driver.ensureUserInitialized(); err != nil {
+		return "", err
+	}
+	return "ftp", nil
+}
+
+func (driver *KubeDriver) GetMode(path string) (os.FileMode, error) {
+	// Get file mode from the storage implementation
+	if err := driver.ensureUserInitialized(); err != nil {
+		return 0, err
+	}
+	stat, err := driver.storageImpl.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return stat.Mode(), nil
+}
+
+func (driver *KubeDriver) ChOwner(path string, owner string) error {
+	// Owner changes not supported - return success to avoid blocking operations
+	log.Printf("[%s] CHOWN: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, owner)
+	return nil
+}
+
+func (driver *KubeDriver) ChGroup(path string, group string) error {
+	// Group changes not supported - return success to avoid blocking operations
+	log.Printf("[%s] CHGRP: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, group)
+	return nil
+}
+
+func (driver *KubeDriver) ChMode(path string, mode os.FileMode) error {
+	// Mode changes not supported for most backends - return success to avoid blocking operations
+	log.Printf("[%s] CHMOD: %s to %v (not supported, ignoring)", driver.getAuthenticatedUsername(), path, mode)
 	return nil
 }

@@ -66,17 +66,18 @@ func init() {
 }
 
 type appConfig struct {
-	metricsAddr     string
-	metricsCertPath string
-	metricsCertName string
-	metricsCertKey  string
-	webhookCertPath string
-	webhookCertName string
-	webhookCertKey  string
-	secureMetrics   bool
-	enableHTTP2     bool
-	ftpPort         int
-	ftpPasvPorts    string
+	metricsAddr       string
+	metricsCertPath   string
+	metricsCertName   string
+	metricsCertKey    string
+	webhookCertPath   string
+	webhookCertName   string
+	webhookCertKey    string
+	secureMetrics     bool
+	enableHTTP2       bool
+	ftpPort           int
+	ftpPasvPorts      string
+	ftpWelcomeMessage string
 }
 
 func getDefaultFTPPort() int {
@@ -131,6 +132,10 @@ func processEnvironmentOverrides(config *appConfig) {
 		if envMinPort != "" && envMaxPort != "" {
 			config.ftpPasvPorts = envMinPort + "-" + envMaxPort
 		}
+	}
+
+	if envFtpWelcome := os.Getenv("FTP_WELCOME_MESSAGE"); envFtpWelcome != "" {
+		config.ftpWelcomeMessage = envFtpWelcome
 	}
 }
 
@@ -318,7 +323,7 @@ func main() {
 	}
 
 	// Start FTP server
-	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, mgr.GetClient())
+	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, config.ftpWelcomeMessage, mgr.GetClient())
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
