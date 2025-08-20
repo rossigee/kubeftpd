@@ -36,6 +36,21 @@ func getLogger() logr.Logger {
 	return ctrl.Log.WithName("ftp")
 }
 
+// isFileNotFoundError checks if an error indicates a file was not found
+// This helps distinguish between normal "file not found" cases (like RNFR checking)
+// and actual storage errors that need attention
+func isFileNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check common "file not found" error patterns
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "not found") ||
+		strings.Contains(errStr, "no such file") ||
+		strings.Contains(errStr, "does not exist")
+}
+
 // isTracingEnabled returns true if OpenTelemetry is configured
 func isTracingEnabled() bool {
 	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" ||
@@ -306,7 +321,13 @@ func (driver *KubeDriver) Stat(ctx *server.Context, path string) (os.FileInfo, e
 
 	stat, err := driver.storageImpl.Stat(resolvedPath)
 	if err != nil {
-		logger.Error(err, "Stat operation failed", "username", username, "path", path, "resolved_path", resolvedPath)
+		// File not found is a normal condition (e.g., for RNFR operations checking if file exists)
+		// Only log as error if it's not a simple "file not found" case
+		if isFileNotFoundError(err) {
+			logger.Info("Stat operation: file not found", "username", username, "path", path, "resolved_path", resolvedPath)
+		} else {
+			logger.Error(err, "Stat operation failed", "username", username, "path", path, "resolved_path", resolvedPath)
+		}
 	} else {
 		logger.Info("Stat operation successful", "username", username, "path", path, "resolved_path", resolvedPath, "size", stat.Size())
 	}
@@ -364,49 +385,68 @@ func (driver *KubeDriver) DeleteDir(ctx *server.Context, path string) error {
 }
 
 func (driver *KubeDriver) DeleteFile(ctx *server.Context, path string) error {
-	getLogger().Info("[%s] DELETE: %s", driver.getAuthenticatedUsername(), path)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP DELETE operation", "username", username, "path", path)
+
 	if err := driver.ensureUserInitialized(); err != nil {
-		getLogger().Info("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "DELETE failed during user initialization", "username", username, "path", path)
 		return err
 	}
 
 	// Validate chroot restrictions and get resolved path
 	resolvedPath, err := driver.validateChrootPath(path)
 	if err != nil {
+		logger.Info("DELETE failed due to chroot restriction", "username", username, "path", path, "error", err)
 		return err
 	}
 
 	err = driver.storageImpl.DeleteFile(resolvedPath)
 	if err != nil {
-		getLogger().Info("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		// File not found is a normal condition for DELETE operations
+		if isFileNotFoundError(err) {
+			logger.Info("DELETE operation: file not found", "username", username, "path", path, "resolved_path", resolvedPath)
+		} else {
+			logger.Error(err, "DELETE operation failed", "username", username, "path", path, "resolved_path", resolvedPath)
+		}
 	} else {
-		getLogger().Info("[%s] DELETE SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+		logger.Info("DELETE operation successful", "username", username, "path", path, "resolved_path", resolvedPath)
 	}
 	return err
 }
 
 func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) error {
-	getLogger().Info("[%s] RENAME: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP RENAME operation", "username", username, "from_path", fromPath, "to_path", toPath)
+
 	if err := driver.ensureUserInitialized(); err != nil {
-		getLogger().Info("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
+		logger.Error(err, "RENAME failed during user initialization", "username", username, "from_path", fromPath, "to_path", toPath)
 		return err
 	}
 
 	// Validate chroot restrictions for both paths and get resolved paths
 	resolvedFromPath, err := driver.validateChrootPath(fromPath)
 	if err != nil {
+		logger.Info("RENAME failed due to chroot restriction on source", "username", username, "from_path", fromPath, "error", err)
 		return err
 	}
 	resolvedToPath, err := driver.validateChrootPath(toPath)
 	if err != nil {
+		logger.Info("RENAME failed due to chroot restriction on destination", "username", username, "to_path", toPath, "error", err)
 		return err
 	}
 
 	err = driver.storageImpl.Rename(resolvedFromPath, resolvedToPath)
 	if err != nil {
-		getLogger().Info("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
+		// File not found is expected for RENAME operations (RNFR checking if source exists)
+		if isFileNotFoundError(err) {
+			logger.Info("RENAME operation: source file not found", "username", username, "from_path", fromPath, "to_path", toPath, "resolved_from", resolvedFromPath)
+		} else {
+			logger.Error(err, "RENAME operation failed", "username", username, "from_path", fromPath, "to_path", toPath, "resolved_from", resolvedFromPath, "resolved_to", resolvedToPath)
+		}
 	} else {
-		getLogger().Info("[%s] RENAME SUCCESS: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
+		logger.Info("RENAME operation successful", "username", username, "from_path", fromPath, "to_path", toPath, "resolved_from", resolvedFromPath, "resolved_to", resolvedToPath)
 	}
 	return err
 }
