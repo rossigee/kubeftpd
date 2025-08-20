@@ -62,13 +62,33 @@ type BuiltInUserManager struct {
 func (r *BuiltInUserManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	// This controller doesn't watch specific resources, it's triggered by configuration changes
-	// For now, we'll manage built-in users directly
-	if err := r.reconcileBuiltInUsers(ctx); err != nil {
-		log.Error(err, "Failed to reconcile built-in users")
+	// Check if this is a built-in user by trying to get it and checking labels
+	user := &ftpv1.User{}
+	if err := r.Get(ctx, req.NamespacedName, user); err != nil {
+		if errors.IsNotFound(err) {
+			// User was deleted, ensure our built-in users are still present
+			log.Info("User deleted, reconciling built-in users", "name", req.Name)
+			return r.reconcileAndReturn(ctx)
+		}
+		log.Error(err, "Failed to get user", "name", req.Name)
 		return ctrl.Result{}, err
 	}
 
+	// Only handle built-in users (those with our label)
+	if user.Labels["kubeftpd.golder.org/builtin"] == "true" {
+		log.Info("Reconciling built-in user", "name", req.Name)
+		return r.reconcileAndReturn(ctx)
+	}
+
+	// Not a built-in user, ignore
+	return ctrl.Result{}, nil
+}
+
+// reconcileAndReturn is a helper that reconciles built-in users and returns appropriate result
+func (r *BuiltInUserManager) reconcileAndReturn(ctx context.Context) (ctrl.Result, error) {
+	if err := r.reconcileBuiltInUsers(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -305,5 +325,6 @@ func (r *BuiltInUserManager) UpdateConfig(ctx context.Context, config BuiltInUse
 func (r *BuiltInUserManager) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("builtin-user-manager").
+		For(&ftpv1.User{}).
 		Complete(r)
 }
