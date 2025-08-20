@@ -125,7 +125,23 @@ func (kubeLogger *KubeLogger) Printf(sessionId string, format string, v ...inter
 
 func (kubeLogger *KubeLogger) PrintCommand(sessionId string, command string, params string) {
 	logger := getLogger()
-	logger.Info("FTP command", "session_id", sessionId, "command", command, "params", params)
+
+	// Redact sensitive information in FTP commands
+	logParams := params
+	switch strings.ToUpper(command) {
+	case "PASS":
+		// Password commands should never log the actual password
+		if params != "" {
+			logParams = "[REDACTED]"
+		}
+	case "ACCT":
+		// Account information may contain sensitive data
+		if params != "" {
+			logParams = "[REDACTED]"
+		}
+	}
+
+	logger.Info("FTP command", "session_id", sessionId, "command", command, "params", logParams)
 }
 
 func (kubeLogger *KubeLogger) PrintResponse(sessionId string, code int, message string) {
