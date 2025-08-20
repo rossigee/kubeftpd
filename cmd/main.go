@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -318,18 +319,40 @@ func main() {
 
 	// Start FTP server
 	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, mgr.GetClient())
-	ctx := ctrl.SetupSignalHandler()
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+
+	// Channel to receive FTP server errors
+	ftpErrorChan := make(chan error, 1)
 
 	go func() {
 		setupLog.Info("starting FTP server", "port", config.ftpPort, "pasv-ports", config.ftpPasvPorts)
 		if err := ftpServer.Start(ctx); err != nil {
-			setupLog.Error(err, "FTP server error")
+			ftpErrorChan <- err
 		}
 	}()
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
-		setupLog.Error(err, "problem running manager")
+	// Channel to receive manager errors
+	managerErrorChan := make(chan error, 1)
+
+	go func() {
+		setupLog.Info("starting manager")
+		if err := mgr.Start(ctx); err != nil {
+			managerErrorChan <- err
+		}
+	}()
+
+	// Wait for either component to fail or context cancellation
+	select {
+	case err := <-ftpErrorChan:
+		setupLog.Error(err, "FTP server failed to start - shutting down")
+		cancel()
 		os.Exit(1)
+	case err := <-managerErrorChan:
+		setupLog.Error(err, "manager failed to start - shutting down")
+		cancel()
+		os.Exit(1)
+	case <-ctx.Done():
+		setupLog.Info("shutting down gracefully")
 	}
 }

@@ -162,7 +162,7 @@ func TestKubeAuth_CheckPasswd(t *testing.T) {
 				auth.userCache.Store(user.Spec.Username, &userCopy)
 			}
 
-			gotAuth, err := auth.CheckPasswd(tt.username, tt.password)
+			gotAuth, err := auth.CheckPasswd(nil, tt.username, tt.password)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -417,12 +417,12 @@ func TestKubeAuth_SecretBasedPassword(t *testing.T) {
 	auth := NewKubeAuth(fakeClient)
 
 	// Test authentication with correct password
-	authenticated, err := auth.CheckPasswd("testuser", "secret123")
+	authenticated, err := auth.CheckPasswd(nil, "testuser", "secret123")
 	assert.NoError(t, err)
 	assert.True(t, authenticated)
 
 	// Test authentication with wrong password
-	authenticated, err = auth.CheckPasswd("testuser", "wrongpass")
+	authenticated, err = auth.CheckPasswd(nil, "testuser", "wrongpass")
 	assert.NoError(t, err)
 	assert.False(t, authenticated)
 }
@@ -474,7 +474,7 @@ func TestKubeAuth_SecretBasedPasswordCustomKey(t *testing.T) {
 	auth := NewKubeAuth(fakeClient)
 
 	// Test authentication with correct password
-	authenticated, err := auth.CheckPasswd("testuser", "customsecret456")
+	authenticated, err := auth.CheckPasswd(nil, "testuser", "customsecret456")
 	assert.NoError(t, err)
 	assert.True(t, authenticated)
 }

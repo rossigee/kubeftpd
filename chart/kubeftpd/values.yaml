@@ -14,7 +14,7 @@ controller:
   image:
     registry: ghcr.io
     repository: rossigee/kubeftpd
-    tag: "v0.4.0"
+    tag: "v0.4.5"
     pullPolicy: IfNotPresent
     pullSecrets: []
 
@@ -85,7 +85,7 @@ ftp:
   # FTP service configuration
   service:
     type: LoadBalancer
-    port: 21
+    port: 2121
     annotations: {}
     loadBalancerIP: ""
     loadBalancerSourceRanges: []

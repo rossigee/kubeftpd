@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sync/atomic"
 
-	"github.com/goftp/server"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -16,14 +16,14 @@ import (
 // Storage interface defines the operations supported by storage backends
 type Storage interface {
 	ChangeDir(path string) error
-	Stat(path string) (server.FileInfo, error)
-	ListDir(path string, callback func(server.FileInfo) error) error
+	Stat(path string) (os.FileInfo, error)
+	ListDir(path string, callback func(os.FileInfo) error) error
 	DeleteDir(path string) error
 	DeleteFile(path string) error
 	Rename(fromPath, toPath string) error
 	MakeDir(path string) error
 	GetFile(path string, offset int64) (int64, io.ReadCloser, error)
-	PutFile(path string, reader io.Reader, append bool) (int64, error)
+	PutFile(path string, reader io.Reader, offset int64) (int64, error)
 }
 
 // countingReader counts bytes read from the underlying reader

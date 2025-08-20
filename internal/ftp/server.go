@@ -6,15 +6,34 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"time"
 
-	"github.com/goftp/server"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"goftp.io/server/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 	"github.com/rossigee/kubeftpd/internal/metrics"
 	"github.com/rossigee/kubeftpd/internal/storage"
 )
+
+var (
+	tracer trace.Tracer
+)
+
+func init() {
+	tracer = otel.Tracer("kubeftpd/ftp")
+}
+
+// isTracingEnabled returns true if OpenTelemetry is configured
+func isTracingEnabled() bool {
+	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" ||
+		os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" ||
+		os.Getenv("OTEL_SERVICE_NAME") != ""
+}
 
 // Server represents the KubeFTPd server
 type Server struct {
@@ -41,10 +60,13 @@ func (s *Server) Start(ctx context.Context) error {
 	auth := NewKubeAuth(s.client)
 
 	// Create FTP server configuration
-	factory := &KubeDriverFactory{client: s.client, auth: auth}
+	driver := &KubeDriver{
+		client: s.client,
+		auth:   auth,
+	}
 
-	opts := &server.ServerOpts{
-		Factory:      factory,
+	opts := &server.Options{
+		Driver:       driver,
 		Port:         s.Port,
 		Hostname:     "",
 		Auth:         auth,
@@ -52,7 +74,10 @@ func (s *Server) Start(ctx context.Context) error {
 		PassivePorts: s.PasvPorts,
 	}
 
-	ftpServer := server.NewServer(opts)
+	ftpServer, err := server.NewServer(opts)
+	if err != nil {
+		return fmt.Errorf("failed to create FTP server: %w", err)
+	}
 	s.server = ftpServer
 
 	// Start the server
@@ -110,7 +135,7 @@ func (factory *KubeDriverFactory) NewDriver() (server.Driver, error) {
 type KubeDriver struct {
 	client            client.Client
 	auth              *KubeAuth
-	conn              *server.Conn
+	conn              *server.Context
 	user              *ftpv1.User
 	storageImpl       storage.Storage
 	authenticatedUser string    // Track the authenticated username
@@ -118,7 +143,7 @@ type KubeDriver struct {
 	clientIP          string    // Track client IP
 }
 
-func (driver *KubeDriver) Init(conn *server.Conn) {
+func (driver *KubeDriver) Init(conn *server.Context) {
 	log.Printf("Initializing driver for connection")
 	// Store connection reference to get authenticated user later
 	driver.conn = conn
@@ -134,7 +159,7 @@ func (driver *KubeDriver) Init(conn *server.Conn) {
 	}
 }
 
-func (driver *KubeDriver) ChangeDir(path string) error {
+func (driver *KubeDriver) ChangeDir(ctx *server.Context, path string) error {
 	log.Printf("ChangeDir: %s", path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		return err
@@ -142,7 +167,7 @@ func (driver *KubeDriver) ChangeDir(path string) error {
 	return driver.storageImpl.ChangeDir(path)
 }
 
-func (driver *KubeDriver) Stat(path string) (server.FileInfo, error) {
+func (driver *KubeDriver) Stat(ctx *server.Context, path string) (os.FileInfo, error) {
 	log.Printf("Stat: %s", path)
 	if err := driver.ensureUserInitialized(); err != nil {
 		return nil, err
@@ -150,51 +175,110 @@ func (driver *KubeDriver) Stat(path string) (server.FileInfo, error) {
 	return driver.storageImpl.Stat(path)
 }
 
-func (driver *KubeDriver) ListDir(path string, callback func(server.FileInfo) error) error {
-	log.Printf("ListDir: %s", path)
+func (driver *KubeDriver) ListDir(ctx *server.Context, path string, callback func(os.FileInfo) error) error {
+	log.Printf("[%s] LIST: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] LIST FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		return err
 	}
-	return driver.storageImpl.ListDir(path, callback)
+
+	err := driver.storageImpl.ListDir(path, callback)
+	if err != nil {
+		log.Printf("[%s] LIST FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+	} else {
+		log.Printf("[%s] LIST SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+	}
+	return err
 }
 
-func (driver *KubeDriver) DeleteDir(path string) error {
-	log.Printf("DeleteDir: %s", path)
+func (driver *KubeDriver) DeleteDir(ctx *server.Context, path string) error {
+	log.Printf("[%s] RMDIR: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] RMDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		return err
 	}
-	return driver.storageImpl.DeleteDir(path)
+
+	err := driver.storageImpl.DeleteDir(path)
+	if err != nil {
+		log.Printf("[%s] RMDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+	} else {
+		log.Printf("[%s] RMDIR SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+	}
+	return err
 }
 
-func (driver *KubeDriver) DeleteFile(path string) error {
-	log.Printf("DeleteFile: %s", path)
+func (driver *KubeDriver) DeleteFile(ctx *server.Context, path string) error {
+	log.Printf("[%s] DELETE: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		return err
 	}
-	return driver.storageImpl.DeleteFile(path)
+
+	err := driver.storageImpl.DeleteFile(path)
+	if err != nil {
+		log.Printf("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+	} else {
+		log.Printf("[%s] DELETE SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+	}
+	return err
 }
 
-func (driver *KubeDriver) Rename(fromPath, toPath string) error {
-	log.Printf("Rename: %s -> %s", fromPath, toPath)
+func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) error {
+	log.Printf("[%s] RENAME: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
 		return err
 	}
-	return driver.storageImpl.Rename(fromPath, toPath)
+
+	err := driver.storageImpl.Rename(fromPath, toPath)
+	if err != nil {
+		log.Printf("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
+	} else {
+		log.Printf("[%s] RENAME SUCCESS: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
+	}
+	return err
 }
 
-func (driver *KubeDriver) MakeDir(path string) error {
-	log.Printf("MakeDir: %s", path)
+func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
+	log.Printf("[%s] MKDIR: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		return err
 	}
-	return driver.storageImpl.MakeDir(path)
+
+	err := driver.storageImpl.MakeDir(path)
+	if err != nil {
+		log.Printf("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+	} else {
+		log.Printf("[%s] MKDIR SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+	}
+	return err
 }
 
-func (driver *KubeDriver) GetFile(path string, offset int64) (int64, io.ReadCloser, error) {
-	log.Printf("GetFile: %s (offset: %d)", path, offset)
+func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64) (int64, io.ReadCloser, error) {
+	traceCtx := context.Background()
+	var span trace.Span
+
+	if isTracingEnabled() {
+		_, span = tracer.Start(traceCtx, "ftp.download",
+			trace.WithAttributes(
+				attribute.String("ftp.user", driver.getAuthenticatedUsername()),
+				attribute.String("ftp.path", path),
+				attribute.Int64("ftp.offset", offset),
+				attribute.String("ftp.backend", driver.getBackendType()),
+			))
+		defer span.End()
+	}
+
+	log.Printf("[%s] DOWNLOAD: %s (offset: %d)", driver.getAuthenticatedUsername(), path, offset)
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		if span != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.String("ftp.status", "error"))
+		}
 		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
 		return 0, nil, err
 	}
@@ -203,33 +287,87 @@ func (driver *KubeDriver) GetFile(path string, offset int64) (int64, io.ReadClos
 	duration := time.Since(start)
 
 	if err != nil {
+		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		if span != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.String("ftp.status", "error"))
+		}
 		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
 		return 0, nil, err
 	}
 
+	log.Printf("[%s] DOWNLOAD SUCCESS: %s (%d bytes, %v)", driver.getAuthenticatedUsername(), path, size, duration)
+	if span != nil {
+		span.SetAttributes(
+			attribute.String("ftp.status", "success"),
+			attribute.Int64("ftp.bytes", size),
+			attribute.Int64("ftp.duration_ms", duration.Milliseconds()),
+		)
+	}
 	metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "success")
 	metrics.RecordFileTransfer(driver.authenticatedUser, "download", driver.getBackendType(), size, duration)
 
 	return size, reader, nil
 }
 
-func (driver *KubeDriver) PutFile(path string, reader io.Reader, append bool) (int64, error) {
-	log.Printf("PutFile: %s (append: %v)", path, append)
+func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Reader, offset int64) (int64, error) {
+	traceCtx := context.Background()
+	var span trace.Span
+
+	uploadType := "UPLOAD"
+	operation := "ftp.upload"
+	append := offset > 0
+	if append {
+		uploadType = "APPEND"
+		operation = "ftp.append"
+	}
+
+	if isTracingEnabled() {
+		_, span = tracer.Start(traceCtx, operation,
+			trace.WithAttributes(
+				attribute.String("ftp.user", driver.getAuthenticatedUsername()),
+				attribute.String("ftp.path", path),
+				attribute.Bool("ftp.append", append),
+				attribute.Int64("ftp.offset", offset),
+				attribute.String("ftp.backend", driver.getBackendType()),
+			))
+		defer span.End()
+	}
+
+	log.Printf("[%s] %s: %s", driver.getAuthenticatedUsername(), uploadType, path)
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
+		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		if span != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.String("ftp.status", "error"))
+		}
 		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
 		return 0, err
 	}
 
-	size, err := driver.storageImpl.PutFile(path, reader, append)
+	size, err := driver.storageImpl.PutFile(path, reader, offset)
 	duration := time.Since(start)
 
 	if err != nil {
+		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		if span != nil {
+			span.RecordError(err)
+			span.SetAttributes(attribute.String("ftp.status", "error"))
+		}
 		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
 		return 0, err
 	}
 
+	log.Printf("[%s] %s SUCCESS: %s (%d bytes, %v)", driver.getAuthenticatedUsername(), uploadType, path, size, duration)
+	if span != nil {
+		span.SetAttributes(
+			attribute.String("ftp.status", "success"),
+			attribute.Int64("ftp.bytes", size),
+			attribute.Int64("ftp.duration_ms", duration.Milliseconds()),
+		)
+	}
 	metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "success")
 	metrics.RecordFileTransfer(driver.authenticatedUser, "upload", driver.getBackendType(), size, duration)
 

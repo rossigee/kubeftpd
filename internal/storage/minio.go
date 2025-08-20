@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/goftp/server"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 	"github.com/rossigee/kubeftpd/internal/backends"
@@ -41,7 +40,7 @@ func (s *minioStorage) ChangeDir(dir string) error {
 }
 
 // Stat returns file information for the given path
-func (s *minioStorage) Stat(filePath string) (server.FileInfo, error) {
+func (s *minioStorage) Stat(filePath string) (os.FileInfo, error) {
 	start := time.Now()
 	fullPath := s.resolvePath(filePath)
 
@@ -81,7 +80,7 @@ func (s *minioStorage) Stat(filePath string) (server.FileInfo, error) {
 }
 
 // ListDir lists directory contents
-func (s *minioStorage) ListDir(dirPath string, callback func(server.FileInfo) error) error {
+func (s *minioStorage) ListDir(dirPath string, callback func(os.FileInfo) error) error {
 	fullPath := s.resolvePath(dirPath)
 
 	objects, err := s.backend.ListObjects(fullPath, false)
@@ -206,16 +205,16 @@ func (s *minioStorage) GetFile(filePath string, offset int64) (int64, io.ReadClo
 }
 
 // PutFile uploads a file using streaming
-func (s *minioStorage) PutFile(filePath string, reader io.Reader, append bool) (int64, error) {
+func (s *minioStorage) PutFile(filePath string, reader io.Reader, offset int64) (int64, error) {
 	if !s.user.Spec.Permissions.Write {
 		return 0, fmt.Errorf("write permission denied")
 	}
 
 	fullPath := s.resolvePath(filePath)
 
-	// For simplicity, we don't support append mode for now
-	if append {
-		return 0, fmt.Errorf("append mode not supported")
+	// For simplicity, we don't support offset mode for now
+	if offset != 0 {
+		return 0, fmt.Errorf("offset mode not supported")
 	}
 
 	// Create a counting reader to track bytes uploaded

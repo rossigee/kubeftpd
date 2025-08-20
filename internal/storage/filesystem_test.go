@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/goftp/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -220,7 +219,7 @@ func TestFilesystemStorage_ListDir(t *testing.T) {
 	mockBackend.On("ListFiles", "/home/testuser", false).Return(fileInfos, nil)
 
 	var fileNames []string
-	err := storage.ListDir("", func(info server.FileInfo) error {
+	err := storage.ListDir("", func(info os.FileInfo) error {
 		fileNames = append(fileNames, info.Name())
 		return nil
 	})
@@ -245,7 +244,7 @@ func TestFilesystemStorage_ListDir_PermissionDenied(t *testing.T) {
 		currentDir: "/home/testuser",
 	}
 
-	err := storage.ListDir("", func(info server.FileInfo) error {
+	err := storage.ListDir("", func(info os.FileInfo) error {
 		return nil
 	})
 
@@ -417,7 +416,7 @@ func TestFilesystemStorage_PutFile(t *testing.T) {
 	mockBackend.On("IsReadOnly").Return(false)
 	mockBackend.On("PutFile", "/home/testuser/test.txt", mock.Anything, int64(-1)).Return(nil)
 
-	size, err := storage.PutFile("test.txt", reader, false)
+	size, err := storage.PutFile("test.txt", reader, int64(0))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(testContent)), size)
 
@@ -440,7 +439,7 @@ func TestFilesystemStorage_PutFile_PermissionDenied(t *testing.T) {
 	testContent := "test file content"
 	reader := strings.NewReader(testContent)
 
-	_, err := storage.PutFile("test.txt", reader, false)
+	_, err := storage.PutFile("test.txt", reader, int64(0))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "write permission denied")
 
@@ -605,7 +604,7 @@ func TestFilesystemStorage_StreamingBehavior(t *testing.T) {
 	mockBackend.On("IsReadOnly").Return(false)
 	mockBackend.On("PutFile", "/home/testuser/large.txt", mock.Anything, int64(-1)).Return(nil)
 
-	size, err := storage.PutFile("large.txt", reader, false)
+	size, err := storage.PutFile("large.txt", reader, int64(0))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(largeContent)), size)
 

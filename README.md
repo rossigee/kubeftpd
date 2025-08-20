@@ -384,15 +384,32 @@ spec:
 | `LOG_FORMAT` | Log format (json, text) | `json` |
 | `HTTP_PORT` | HTTP server port (metrics, health, status) | `8080` |
 
+### OpenTelemetry Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces and metrics | `""` (disabled) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | OTLP endpoint for traces only | `""` (disabled) |
+| `OTEL_SERVICE_NAME` | Service name for telemetry | `""` (disabled) |
+| `OTEL_RESOURCE_ATTRIBUTES` | Additional resource attributes | `""` |
+
+**Note**: OpenTelemetry tracing is automatically enabled when any `OTEL_*` environment variables are configured.
+
 ### Security Best Practices
 
 1. **Port Configuration**: KubeFTPd automatically selects safe default ports based on user privileges:
    - **Root users (UID 0)**: Default to port 21 (standard FTP port)
    - **Non-root users**: Default to port 2121 to avoid "permission denied" errors
    - Override with `FTP_PORT` environment variable or `--ftp-port` flag if needed
+   - **Startup Failure Handling**: Service terminates immediately if FTP port binding fails, preventing zombie processes
 
-2. **Use Kubernetes Secrets** for storing credentials instead of plain text
-3. **Enable Webhook Validation** for password policies and production compliance:
+2. **Fail-Fast Architecture**: KubeFTPd implements fail-fast startup behavior:
+   - FTP server binding failures cause immediate application termination
+   - Kubernetes will restart the pod, providing clear feedback about configuration issues
+   - Health checks only pass when FTP service is actually functional
+
+3. **Use Kubernetes Secrets** for storing credentials instead of plain text
+4. **Enable Webhook Validation** for password policies and production compliance:
    ```yaml
    webhook:
      enabled: true
@@ -605,6 +622,42 @@ spec:
 - **Permissions**: Enhanced permission model with Kubernetes RBAC integration
 
 ## Monitoring and Observability
+
+### Structured Logging
+
+KubeFTPd provides comprehensive structured logging for all FTP operations with detailed success/failure information:
+
+**Log Format Examples:**
+```
+[testuser] UPLOAD SUCCESS: /docs/file.pdf (1024 bytes, 450ms)
+[testuser] DOWNLOAD SUCCESS: /images/photo.jpg (2560 bytes, 120ms)
+[testuser] DELETE FAILED: /protected/secret.txt - permission denied
+[testuser] LIST SUCCESS: /documents/
+[testuser] MKDIR SUCCESS: /newfolder/
+```
+
+**Logged Operations:**
+- **File Operations**: UPLOAD, DOWNLOAD, DELETE with size, duration, and status
+- **Directory Operations**: LIST, MKDIR, RMDIR with success/failure status  
+- **Authentication**: User login/logout with session duration
+- **Errors**: Detailed error information with context
+
+### OpenTelemetry Tracing
+
+Distributed tracing support for FTP operations when OpenTelemetry is configured:
+
+**Traced Operations:**
+- `ftp.upload` - File uploads with size, duration, backend type
+- `ftp.download` - File downloads with offset, size, timing
+- `ftp.append` - File append operations
+- `ftp.delete` - File and directory deletions
+
+**Trace Attributes:**
+- `ftp.user` - Authenticated username
+- `ftp.path` - File/directory path
+- `ftp.backend` - Storage backend type
+- `ftp.bytes` - Transfer size in bytes
+- `ftp.duration_ms` - Operation duration
 
 ### Health Checks
 

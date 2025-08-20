@@ -9,6 +9,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"goftp.io/server/v2"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -67,7 +68,7 @@ func NewKubeAuth(kubeClient client.Client) *KubeAuth {
 }
 
 // CheckPasswd validates user credentials against User CRDs
-func (auth *KubeAuth) CheckPasswd(username, password string) (bool, error) {
+func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string) (bool, error) {
 	log.Printf("Authenticating user: %s", username)
 
 	// First try to get from cache

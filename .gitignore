@@ -83,3 +83,6 @@ local-secrets/
 *.rpm
 *.tar.gz
 *.tgz
+
+# Main binary
+kubeftpd

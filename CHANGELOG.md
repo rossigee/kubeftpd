@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Enhanced FTP Operation Logging**: Comprehensive structured logging for all FTP operations
+  - Success/failure status for uploads, downloads, deletes, directory operations
+  - File sizes, transfer duration, and detailed error information
+  - Username context in all log entries for audit trails
+  - Format: `[username] OPERATION STATUS: path (size, duration)`
+- **OpenTelemetry Tracing Support**: Distributed tracing for FTP operations (disabled by default)
+  - Automatic activation when `OTEL_*` environment variables are configured
+  - Traces for upload, download, append, and delete operations with timing and metadata
+  - Attributes include user, path, backend type, bytes transferred, and duration
+  - Operations: `ftp.upload`, `ftp.download`, `ftp.append`, `ftp.delete`
+
+### Fixed
+- **FTP server startup failure handling**: Service now terminates immediately when FTP port binding fails
+  - Prevents zombie services that appear healthy but are non-functional
+  - Implements graceful shutdown coordination between FTP server and manager components
+  - Kubernetes will restart the pod, providing proper feedback about configuration issues
+- **Helm chart default FTP port**: Changed from 21 to 2121 to match non-root security context
+  - Resolves port binding failures in non-root deployments
+  - Aligns with existing security best practices (`runAsNonRoot: true`)
+
 ## [v0.4.2] - 2025-08-19
 
 ### Added

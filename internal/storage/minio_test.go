@@ -2,10 +2,10 @@ package storage
 
 import (
 	"io"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/goftp/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -163,7 +163,7 @@ func TestMinioStorage_ListDir(t *testing.T) {
 	}
 
 	var fileNames []string
-	err := storage.ListDir("", func(info server.FileInfo) error {
+	err := storage.ListDir("", func(info os.FileInfo) error {
 		fileNames = append(fileNames, info.Name())
 		return nil
 	})
@@ -342,7 +342,7 @@ func TestMinioStorage_PutFile(t *testing.T) {
 		currentDir: "/home/testuser",
 	}
 
-	size, err := storage.PutFile("testfile.txt", reader, false)
+	size, err := storage.PutFile("testfile.txt", reader, int64(0))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(testContent)), size)
 

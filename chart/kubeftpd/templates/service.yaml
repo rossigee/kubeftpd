@@ -21,7 +21,7 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   ports:
-  - port: {{ .Values.ftp.service.port }}
+  - port: 21
     targetPort: ftp
     protocol: TCP
     name: ftp
