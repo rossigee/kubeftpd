@@ -82,3 +82,4 @@ local-secrets/
 *.deb
 *.rpm
 *.tar.gz
+*.tgz
