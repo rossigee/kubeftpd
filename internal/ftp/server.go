@@ -4,17 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"goftp.io/server/v2"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -28,6 +29,11 @@ var (
 
 func init() {
 	tracer = otel.Tracer("kubeftpd/ftp")
+}
+
+// getLogger returns a contextual logger for FTP operations
+func getLogger() logr.Logger {
+	return ctrl.Log.WithName("ftp")
 }
 
 // isTracingEnabled returns true if OpenTelemetry is configured
@@ -58,7 +64,8 @@ func NewServer(port int, pasvPorts string, welcomeMessage string, kubeClient cli
 
 // Start initializes and starts the FTP server
 func (s *Server) Start(ctx context.Context) error {
-	log.Printf("Starting KubeFTPd server on port %d with PASV ports %s", s.Port, s.PasvPorts)
+	logger := getLogger()
+	logger.Info("Starting KubeFTPd server", "port", s.Port, "pasv-ports", s.PasvPorts)
 
 	// Create auth instance
 	auth := NewKubeAuth(s.client)
@@ -94,31 +101,36 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		log.Println("Shutting down FTP server...")
+		logger.Info("Shutting down FTP server")
 		_ = listener.Close()
 	}()
 
-	log.Printf("FTP server listening on port %d", s.Port)
+	logger.Info("FTP server listening", "port", s.Port)
 	return ftpServer.Serve(listener)
 }
 
 // KubeLogger implements logging for the FTP server
 type KubeLogger struct{}
 
-func (logger *KubeLogger) Print(sessionId string, message interface{}) {
-	log.Printf("[%s] %v", sessionId, message)
+func (kubeLogger *KubeLogger) Print(sessionId string, message interface{}) {
+	logger := getLogger()
+	logger.Info("FTP session message", "session_id", sessionId, "message", message)
 }
 
-func (logger *KubeLogger) Printf(sessionId string, format string, v ...interface{}) {
-	log.Printf("[%s] "+format, append([]interface{}{sessionId}, v...)...)
+func (kubeLogger *KubeLogger) Printf(sessionId string, format string, v ...interface{}) {
+	logger := getLogger()
+	message := fmt.Sprintf(format, v...)
+	logger.Info("FTP session message", "session_id", sessionId, "message", message)
 }
 
-func (logger *KubeLogger) PrintCommand(sessionId string, command string, params string) {
-	log.Printf("[%s] COMMAND: %s %s", sessionId, command, params)
+func (kubeLogger *KubeLogger) PrintCommand(sessionId string, command string, params string) {
+	logger := getLogger()
+	logger.Info("FTP command", "session_id", sessionId, "command", command, "params", params)
 }
 
-func (logger *KubeLogger) PrintResponse(sessionId string, code int, message string) {
-	log.Printf("[%s] RESPONSE: %d %s", sessionId, code, message)
+func (kubeLogger *KubeLogger) PrintResponse(sessionId string, code int, message string) {
+	logger := getLogger()
+	logger.Info("FTP response", "session_id", sessionId, "code", code, "message", message)
 }
 
 // KubeDriverFactory creates filesystem drivers for authenticated users
@@ -150,7 +162,9 @@ type KubeDriver struct {
 }
 
 func (driver *KubeDriver) Init(conn *server.Context) {
-	log.Printf("Initializing driver for connection")
+	logger := getLogger()
+	logger.Info("Initializing FTP driver for connection")
+
 	// Store connection reference to get authenticated user later
 	driver.conn = conn
 	driver.sessionStart = time.Now()
@@ -161,187 +175,244 @@ func (driver *KubeDriver) Init(conn *server.Context) {
 	// Record connection metrics
 	username := driver.getAuthenticatedUsername()
 	if username != "" {
+		logger.Info("Recording connection metrics", "username", username, "client_ip", driver.clientIP)
 		metrics.RecordConnection(username, driver.clientIP)
 	}
 }
 
-// isPathWithinHome validates that the given path stays within the user's home directory
-func isPathWithinHome(requestedPath, homeDir string) bool {
-	// Clean and normalize both paths
+// resolveChrootPath converts a user's path request to the actual filesystem path within their home directory
+func resolveChrootPath(requestedPath, homeDir string) string {
+	// Clean the requested path
 	cleanRequested := filepath.Clean(requestedPath)
 	cleanHome := filepath.Clean(homeDir)
 
-	// Handle relative paths by resolving against home directory
-	if !filepath.IsAbs(cleanRequested) {
-		cleanRequested = filepath.Join(cleanHome, cleanRequested)
-		cleanRequested = filepath.Clean(cleanRequested)
+	// For chroot users, all absolute paths are relative to their home directory
+	// Convert /file.txt to /home/user/file.txt
+	if filepath.IsAbs(cleanRequested) {
+		// Remove leading slash and join with home directory
+		relativePath := strings.TrimPrefix(cleanRequested, "/")
+		return filepath.Join(cleanHome, relativePath)
 	}
+
+	// Relative paths are resolved against home directory
+	return filepath.Join(cleanHome, cleanRequested)
+}
+
+// isPathWithinHome validates that the resolved path stays within the user's home directory
+func isPathWithinHome(resolvedPath, homeDir string) bool {
+	// Clean and normalize both paths
+	cleanResolved := filepath.Clean(resolvedPath)
+	cleanHome := filepath.Clean(homeDir)
 
 	// Ensure both paths end with separator for proper prefix matching
 	if !strings.HasSuffix(cleanHome, "/") {
 		cleanHome += "/"
 	}
-	if !strings.HasSuffix(cleanRequested, "/") {
-		cleanRequested += "/"
+	if !strings.HasSuffix(cleanResolved, "/") {
+		cleanResolved += "/"
 	}
 
-	// Check if requested path is within or equal to home directory
-	return strings.HasPrefix(cleanRequested, cleanHome) || cleanRequested == strings.TrimSuffix(cleanHome, "/")
+	// Check if resolved path is within or equal to home directory
+	return strings.HasPrefix(cleanResolved, cleanHome) || cleanResolved == strings.TrimSuffix(cleanHome, "/")
 }
 
-// validateChrootPath checks if a path operation is allowed for a chroot user
-func (driver *KubeDriver) validateChrootPath(path string) error {
+// validateChrootPath checks if a path operation is allowed for a chroot user and returns the resolved path
+func (driver *KubeDriver) validateChrootPath(path string) (string, error) {
 	if driver.user == nil {
-		return fmt.Errorf("user not initialized")
+		return "", fmt.Errorf("user not initialized")
 	}
 
-	// If chroot is disabled, allow all paths
+	// If chroot is disabled, use path as-is
 	if !driver.user.Spec.Chroot {
-		return nil
+		return path, nil
 	}
 
 	homeDir := driver.user.Spec.HomeDirectory
-	if !isPathWithinHome(path, homeDir) {
-		log.Printf("[%s] CHROOT VIOLATION: Attempted access to '%s' outside home directory '%s'",
-			driver.getAuthenticatedUsername(), path, homeDir)
-		return fmt.Errorf("access denied: path outside home directory")
+	resolvedPath := resolveChrootPath(path, homeDir)
+
+	if !isPathWithinHome(resolvedPath, homeDir) {
+		logger := getLogger()
+		username := driver.getAuthenticatedUsername()
+		logger.Info("CHROOT VIOLATION: Attempted access outside home directory",
+			"username", username, "requested_path", path, "resolved_path", resolvedPath, "home_directory", homeDir)
+		return "", fmt.Errorf("access denied: path outside home directory")
 	}
 
-	return nil
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("Chroot path resolved", "username", username, "requested_path", path, "resolved_path", resolvedPath)
+
+	return resolvedPath, nil
 }
 
 func (driver *KubeDriver) ChangeDir(ctx *server.Context, path string) error {
-	log.Printf("[%s] ChangeDir: %s", driver.getAuthenticatedUsername(), path)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP ChangeDir operation", "username", username, "path", path)
+
 	if err := driver.ensureUserInitialized(); err != nil {
+		logger.Error(err, "ChangeDir failed during user initialization", "username", username, "path", path)
 		return err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
+	if err != nil {
+		logger.Info("ChangeDir failed due to chroot restriction", "username", username, "path", path, "error", err)
 		return err
 	}
 
-	return driver.storageImpl.ChangeDir(path)
+	err = driver.storageImpl.ChangeDir(resolvedPath)
+	if err != nil {
+		logger.Error(err, "ChangeDir operation failed", "username", username, "path", path, "resolved_path", resolvedPath)
+	} else {
+		logger.Info("ChangeDir operation successful", "username", username, "path", path, "resolved_path", resolvedPath)
+	}
+	return err
 }
 
 func (driver *KubeDriver) Stat(ctx *server.Context, path string) (os.FileInfo, error) {
-	log.Printf("[%s] Stat: %s", driver.getAuthenticatedUsername(), path)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP Stat operation", "username", username, "path", path)
+
 	if err := driver.ensureUserInitialized(); err != nil {
+		logger.Error(err, "Stat failed during user initialization", "username", username, "path", path)
 		return nil, err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
+	if err != nil {
+		logger.Info("Stat failed due to chroot restriction", "username", username, "path", path, "error", err)
 		return nil, err
 	}
 
-	return driver.storageImpl.Stat(path)
+	stat, err := driver.storageImpl.Stat(resolvedPath)
+	if err != nil {
+		logger.Error(err, "Stat operation failed", "username", username, "path", path, "resolved_path", resolvedPath)
+	} else {
+		logger.Info("Stat operation successful", "username", username, "path", path, "resolved_path", resolvedPath, "size", stat.Size())
+	}
+	return stat, err
 }
 
 func (driver *KubeDriver) ListDir(ctx *server.Context, path string, callback func(os.FileInfo) error) error {
-	log.Printf("[%s] LIST: %s", driver.getAuthenticatedUsername(), path)
+	username := driver.getAuthenticatedUsername()
+	logger := getLogger()
+	logger.Info("FTP LIST operation", "username", username, "path", path)
+
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] LIST FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "LIST failed during user initialization", "username", username, "path", path)
 		return err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
-		return err
-	}
-
-	err := driver.storageImpl.ListDir(path, callback)
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
 	if err != nil {
-		log.Printf("[%s] LIST FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	err = driver.storageImpl.ListDir(resolvedPath, callback)
+	if err != nil {
+		logger.Error(err, "LIST operation failed", "username", username, "path", path)
 	} else {
-		log.Printf("[%s] LIST SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+		logger.Info("LIST operation successful", "username", username, "path", path)
 	}
 	return err
 }
 
 func (driver *KubeDriver) DeleteDir(ctx *server.Context, path string) error {
-	log.Printf("[%s] RMDIR: %s", driver.getAuthenticatedUsername(), path)
+	username := driver.getAuthenticatedUsername()
+	logger := getLogger()
+	logger.Info("FTP RMDIR operation", "username", username, "path", path)
+
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] RMDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "RMDIR failed during user initialization", "username", username, "path", path)
 		return err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
-		return err
-	}
-
-	err := driver.storageImpl.DeleteDir(path)
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
 	if err != nil {
-		log.Printf("[%s] RMDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	err = driver.storageImpl.DeleteDir(resolvedPath)
+	if err != nil {
+		logger.Error(err, "RMDIR operation failed", "username", username, "path", path)
 	} else {
-		log.Printf("[%s] RMDIR SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+		logger.Info("RMDIR operation successful", "username", username, "path", path)
 	}
 	return err
 }
 
 func (driver *KubeDriver) DeleteFile(ctx *server.Context, path string) error {
-	log.Printf("[%s] DELETE: %s", driver.getAuthenticatedUsername(), path)
+	getLogger().Info("[%s] DELETE: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		getLogger().Info("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		return err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
-		return err
-	}
-
-	err := driver.storageImpl.DeleteFile(path)
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
 	if err != nil {
-		log.Printf("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	err = driver.storageImpl.DeleteFile(resolvedPath)
+	if err != nil {
+		getLogger().Info("[%s] DELETE FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 	} else {
-		log.Printf("[%s] DELETE SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+		getLogger().Info("[%s] DELETE SUCCESS: %s", driver.getAuthenticatedUsername(), path)
 	}
 	return err
 }
 
 func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) error {
-	log.Printf("[%s] RENAME: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
+	getLogger().Info("[%s] RENAME: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
+		getLogger().Info("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
 		return err
 	}
 
-	// Validate chroot restrictions for both paths
-	if err := driver.validateChrootPath(fromPath); err != nil {
-		return err
-	}
-	if err := driver.validateChrootPath(toPath); err != nil {
-		return err
-	}
-
-	err := driver.storageImpl.Rename(fromPath, toPath)
+	// Validate chroot restrictions for both paths and get resolved paths
+	resolvedFromPath, err := driver.validateChrootPath(fromPath)
 	if err != nil {
-		log.Printf("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
+		return err
+	}
+	resolvedToPath, err := driver.validateChrootPath(toPath)
+	if err != nil {
+		return err
+	}
+
+	err = driver.storageImpl.Rename(resolvedFromPath, resolvedToPath)
+	if err != nil {
+		getLogger().Info("[%s] RENAME FAILED: %s -> %s - %v", driver.getAuthenticatedUsername(), fromPath, toPath, err)
 	} else {
-		log.Printf("[%s] RENAME SUCCESS: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
+		getLogger().Info("[%s] RENAME SUCCESS: %s -> %s", driver.getAuthenticatedUsername(), fromPath, toPath)
 	}
 	return err
 }
 
 func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
-	log.Printf("[%s] MKDIR: %s", driver.getAuthenticatedUsername(), path)
+	getLogger().Info("[%s] MKDIR: %s", driver.getAuthenticatedUsername(), path)
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		getLogger().Info("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 		return err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
-		return err
-	}
-
-	err := driver.storageImpl.MakeDir(path)
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
 	if err != nil {
-		log.Printf("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		return err
+	}
+
+	err = driver.storageImpl.MakeDir(resolvedPath)
+	if err != nil {
+		getLogger().Info("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
 	} else {
-		log.Printf("[%s] MKDIR SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+		getLogger().Info("[%s] MKDIR SUCCESS: %s", driver.getAuthenticatedUsername(), path)
 	}
 	return err
 }
@@ -361,11 +432,13 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 		defer span.End()
 	}
 
-	log.Printf("[%s] DOWNLOAD: %s (offset: %d)", driver.getAuthenticatedUsername(), path, offset)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP DOWNLOAD operation", "username", username, "path", path, "offset", offset)
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "DOWNLOAD failed during user initialization", "username", username, "path", path)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -374,9 +447,10 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 		return 0, nil, err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
-		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
+	if err != nil {
+		logger.Error(err, "DOWNLOAD failed due to chroot restriction", "username", username, "path", path)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -385,11 +459,11 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 		return 0, nil, err
 	}
 
-	size, reader, err := driver.storageImpl.GetFile(path, offset)
+	size, reader, err := driver.storageImpl.GetFile(resolvedPath, offset)
 	duration := time.Since(start)
 
 	if err != nil {
-		log.Printf("[%s] DOWNLOAD FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "DOWNLOAD operation failed", "username", username, "path", path)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -398,7 +472,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 		return 0, nil, err
 	}
 
-	log.Printf("[%s] DOWNLOAD SUCCESS: %s (%d bytes, %v)", driver.getAuthenticatedUsername(), path, size, duration)
+	logger.Info("DOWNLOAD operation successful", "username", username, "path", path, "size_bytes", size, "duration_ms", duration.Milliseconds())
 	if span != nil {
 		span.SetAttributes(
 			attribute.String("ftp.status", "success"),
@@ -436,11 +510,11 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		defer span.End()
 	}
 
-	log.Printf("[%s] %s: %s", driver.getAuthenticatedUsername(), uploadType, path)
+	getLogger().Info("[%s] %s: %s", driver.getAuthenticatedUsername(), uploadType, path)
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
-		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		getLogger().Info("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -449,9 +523,10 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		return 0, err
 	}
 
-	// Validate chroot restrictions
-	if err := driver.validateChrootPath(path); err != nil {
-		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+	// Validate chroot restrictions and get resolved path
+	resolvedPath, err := driver.validateChrootPath(path)
+	if err != nil {
+		getLogger().Info("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -460,11 +535,11 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		return 0, err
 	}
 
-	size, err := driver.storageImpl.PutFile(path, reader, offset)
+	size, err := driver.storageImpl.PutFile(resolvedPath, reader, offset)
 	duration := time.Since(start)
 
 	if err != nil {
-		log.Printf("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		getLogger().Info("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -473,7 +548,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		return 0, err
 	}
 
-	log.Printf("[%s] %s SUCCESS: %s (%d bytes, %v)", driver.getAuthenticatedUsername(), uploadType, path, size, duration)
+	getLogger().Info("[%s] %s SUCCESS: %s (%d bytes, %v)", driver.getAuthenticatedUsername(), uploadType, path, size, duration)
 	if span != nil {
 		span.SetAttributes(
 			attribute.String("ftp.status", "success"),
@@ -494,35 +569,40 @@ func (driver *KubeDriver) ensureUserInitialized() error {
 		return nil
 	}
 
-	// Get the authenticated username from the connection
-	if driver.conn == nil {
-		return fmt.Errorf("no connection available")
-	}
-
-	// The goftp/server doesn't expose the authenticated username directly
-	// We need to try to get it from the auth cache using the connection
-	// For now, we'll implement a workaround by storing the username in the auth
+	// Get the authenticated username from the auth system
 	username := driver.getAuthenticatedUsername()
+	logger := getLogger()
+
 	if username == "" {
+		logger.Error(nil, "ensureUserInitialized failed: no authenticated username available",
+			"conn_nil", driver.conn == nil, "auth_nil", driver.auth == nil)
 		return fmt.Errorf("user not authenticated")
 	}
+
+	logger.Info("ensureUserInitialized: setting up user", "username", username)
 
 	// Get the user from the auth cache
 	user := driver.auth.GetUser(username)
 	if user == nil {
+		logger.Error(nil, "ensureUserInitialized failed: user not found in auth cache", "username", username)
 		return fmt.Errorf("user %s not found in auth cache", username)
 	}
 
 	// Initialize storage if not already done
 	if driver.storageImpl == nil {
+		logger.Info("ensureUserInitialized: initializing storage",
+			"username", username, "backend_kind", user.Spec.Backend.Kind, "backend_name", user.Spec.Backend.Name)
+
 		var err error
 		driver.storageImpl, err = storage.NewStorage(user, driver.client)
 		if err != nil {
+			logger.Error(err, "ensureUserInitialized failed: storage initialization error", "username", username)
 			return fmt.Errorf("failed to initialize storage for user %s: %w", user.Spec.Username, err)
 		}
 
 		driver.user = user
-		log.Printf("User %s configured with %s backend", user.Spec.Username, user.Spec.Backend.Kind)
+		driver.authenticatedUser = username
+		logger.Info("User successfully configured with backend", "username", user.Spec.Username, "backend_kind", user.Spec.Backend.Kind)
 	}
 
 	return nil
@@ -530,6 +610,13 @@ func (driver *KubeDriver) ensureUserInitialized() error {
 
 // getAuthenticatedUsername returns the authenticated username for this driver instance
 func (driver *KubeDriver) getAuthenticatedUsername() string {
+	// Get the authenticated username from the auth system
+	if driver.auth != nil {
+		if lastUser := driver.auth.GetLastAuthUser(); lastUser != "" {
+			return lastUser
+		}
+	}
+	// Fall back to the cached authenticatedUser (used in tests and after authentication)
 	return driver.authenticatedUser
 }
 
@@ -584,18 +671,18 @@ func (driver *KubeDriver) GetMode(path string) (os.FileMode, error) {
 
 func (driver *KubeDriver) ChOwner(path string, owner string) error {
 	// Owner changes not supported - return success to avoid blocking operations
-	log.Printf("[%s] CHOWN: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, owner)
+	getLogger().Info("[%s] CHOWN: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, owner)
 	return nil
 }
 
 func (driver *KubeDriver) ChGroup(path string, group string) error {
 	// Group changes not supported - return success to avoid blocking operations
-	log.Printf("[%s] CHGRP: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, group)
+	getLogger().Info("[%s] CHGRP: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, group)
 	return nil
 }
 
 func (driver *KubeDriver) ChMode(path string, mode os.FileMode) error {
 	// Mode changes not supported for most backends - return success to avoid blocking operations
-	log.Printf("[%s] CHMOD: %s to %v (not supported, ignoring)", driver.getAuthenticatedUsername(), path, mode)
+	getLogger().Info("[%s] CHMOD: %s to %v (not supported, ignoring)", driver.getAuthenticatedUsername(), path, mode)
 	return nil
 }

@@ -3,7 +3,6 @@ package ftp
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"goftp.io/server/v2"
 	corev1 "k8s.io/api/core/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -69,19 +69,20 @@ func NewKubeAuth(kubeClient client.Client) *KubeAuth {
 
 // CheckPasswd validates user credentials against User CRDs
 func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string) (bool, error) {
-	log.Printf("Authenticating user: %s", username)
+	logger := ctrl.Log.WithName("auth")
+	logger.Info("Authenticating user", "username", username)
 
 	// Get user from cache or Kubernetes
 	user := auth.GetUser(username)
 	if user == nil {
-		log.Printf("User %s not found", username)
+		logger.Info("User not found", "username", username)
 		metrics.RecordUserLogin(username, "user_not_found")
 		return false, nil
 	}
 
 	// Check if user is enabled
 	if !user.Spec.Enabled {
-		log.Printf("User %s is disabled", username)
+		logger.Info("User is disabled", "username", username)
 		authFailures.WithLabelValues(username, "user_disabled").Inc()
 		metrics.RecordUserLogin(username, "failure")
 		return false, nil
@@ -100,22 +101,20 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	case "anonymous":
 		// RFC 1635: anonymous FTP allows any password (typically email)
 		authenticated = true
-		log.Printf("Anonymous user authenticated (RFC 1635)")
 		authAttempts.WithLabelValues(username, "anonymous", "success").Inc()
 	case "admin":
 		// Admin users must authenticate against secret
 		authenticated, err = auth.checkAdminPassword(user, password)
 		if err != nil {
-			log.Printf("Failed to check admin password for user %s: %v", username, err)
+			logger.Error(err, "Failed to check admin password", "username", username)
 			authFailures.WithLabelValues(username, "secret_error").Inc()
 			authAttempts.WithLabelValues(username, "admin", "failure").Inc()
 			return false, nil
 		}
 		if authenticated {
-			log.Printf("Admin user %s authenticated successfully", username)
 			authAttempts.WithLabelValues(username, "admin", "success").Inc()
 		} else {
-			log.Printf("Invalid password for admin user %s", username)
+			logger.Info("Invalid password for admin user", "username", username)
 			authFailures.WithLabelValues(username, "invalid_password").Inc()
 			authAttempts.WithLabelValues(username, "admin", "failure").Inc()
 		}
@@ -123,31 +122,32 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 		// Regular users use existing password validation logic
 		authenticated, err = auth.checkRegularUserPassword(user, password)
 		if err != nil {
-			log.Printf("Failed to check password for user %s: %v", username, err)
+			logger.Error(err, "Failed to check password for user", "username", username)
 			authFailures.WithLabelValues(username, "secret_error").Inc()
 			authAttempts.WithLabelValues(username, "regular", "failure").Inc()
 			return false, nil
 		}
 		if authenticated {
-			log.Printf("User %s authenticated successfully", username)
 			method := "plaintext"
 			if user.Spec.PasswordSecret != nil {
 				method = "secret"
 			}
 			authAttempts.WithLabelValues(username, method, "success").Inc()
 		} else {
-			log.Printf("Invalid password for user %s", username)
+			logger.Info("Invalid password for user", "username", username)
 			authFailures.WithLabelValues(username, "invalid_password").Inc()
 			authAttempts.WithLabelValues(username, "regular", "failure").Inc()
 		}
 	}
 
 	if authenticated {
+		logger.Info("User authenticated successfully", "username", username, "user_type", userType)
 		auth.setLastAuthUser(username)
 		metrics.RecordUserLogin(username, "success")
 		return true, nil
 	}
 
+	logger.Info("User authentication failed", "username", username)
 	metrics.RecordUserLogin(username, "failure")
 	return false, nil
 }
@@ -185,7 +185,8 @@ func (auth *KubeAuth) GetUser(username string) *ftpv1.User {
 	// Load from Kubernetes
 	userList := &ftpv1.UserList{}
 	if err := auth.client.List(context.TODO(), userList); err != nil {
-		log.Printf("Failed to list users while getting user %s: %v", username, err)
+		logger := getLogger()
+		logger.Error(err, "Failed to list users", "username", username)
 		return nil
 	}
 
@@ -202,11 +203,12 @@ func (auth *KubeAuth) GetUser(username string) *ftpv1.User {
 
 // RefreshUserCache refreshes the user cache from Kubernetes
 func (auth *KubeAuth) RefreshUserCache(ctx context.Context) error {
-	log.Printf("Refreshing user cache")
+	logger := getLogger()
+	logger.Info("Refreshing user cache")
 
 	userList := &ftpv1.UserList{}
 	if err := auth.client.List(ctx, userList); err != nil {
-		log.Printf("Failed to refresh user cache: %v", err)
+		logger.Error(err, "Failed to refresh user cache")
 		return err
 	}
 
@@ -221,7 +223,7 @@ func (auth *KubeAuth) RefreshUserCache(ctx context.Context) error {
 		auth.userCache.Store(user.Spec.Username, userCopy)
 	}
 
-	log.Printf("User cache refreshed with %d users", len(userList.Items))
+	logger.Info("User cache refreshed", "user_count", len(userList.Items))
 	return nil
 }
 
@@ -233,11 +235,13 @@ func (auth *KubeAuth) StartCacheRefresh(ctx context.Context, interval time.Durat
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Stopping user cache refresh")
+			logger := getLogger()
+			logger.Info("Stopping user cache refresh")
 			return
 		case <-ticker.C:
 			if err := auth.RefreshUserCache(ctx); err != nil {
-				log.Printf("Failed to refresh user cache: %v", err)
+				logger := getLogger()
+				logger.Error(err, "Failed to refresh user cache")
 			}
 		}
 	}
@@ -248,14 +252,16 @@ func (auth *KubeAuth) UpdateUser(user *ftpv1.User) {
 	if user != nil && user.Spec.Username != "" {
 		userCopy := user.DeepCopy()
 		auth.userCache.Store(user.Spec.Username, userCopy)
-		log.Printf("Updated user %s in cache", user.Spec.Username)
+		logger := getLogger()
+		logger.Info("Updated user in cache", "username", user.Spec.Username)
 	}
 }
 
 // DeleteUser removes a user from the cache
 func (auth *KubeAuth) DeleteUser(username string) {
 	auth.userCache.Delete(username)
-	log.Printf("Deleted user %s from cache", username)
+	logger := getLogger()
+	logger.Info("Deleted user from cache", "username", username)
 }
 
 // setLastAuthUser safely sets the last authenticated user
