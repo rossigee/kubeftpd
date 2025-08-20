@@ -62,16 +62,18 @@ func isTracingEnabled() bool {
 type Server struct {
 	Port           int
 	PasvPorts      string
+	PublicIP       string
 	WelcomeMessage string
 	client         client.Client
 	server         *server.Server
 }
 
 // NewServer creates a new FTP server instance
-func NewServer(port int, pasvPorts string, welcomeMessage string, kubeClient client.Client) *Server {
+func NewServer(port int, pasvPorts string, publicIP string, welcomeMessage string, kubeClient client.Client) *Server {
 	return &Server{
 		Port:           port,
 		PasvPorts:      pasvPorts,
+		PublicIP:       publicIP,
 		WelcomeMessage: welcomeMessage,
 		client:         kubeClient,
 	}
@@ -95,6 +97,7 @@ func (s *Server) Start(ctx context.Context) error {
 		Driver:         driver,
 		Port:           s.Port,
 		Hostname:       "",
+		PublicIP:       s.PublicIP,
 		Auth:           auth,
 		Logger:         &KubeLogger{},
 		PassivePorts:   s.PasvPorts,

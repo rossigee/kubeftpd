@@ -77,6 +77,7 @@ type appConfig struct {
 	enableHTTP2       bool
 	ftpPort           int
 	ftpPasvPorts      string
+	ftpPublicIP       string
 	ftpWelcomeMessage string
 	// Built-in anonymous user settings
 	enableAnonymous      bool
@@ -116,7 +117,8 @@ func parseFlags() (*appConfig, zap.Options) {
 	flag.BoolVar(&config.enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.IntVar(&config.ftpPort, "ftp-port", getDefaultFTPPort(), "The port on which the FTP server listens")
-	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "30000-31000", "The range of ports for FTP passive mode")
+	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "10000-10020", "The range of ports for FTP passive mode")
+	flag.StringVar(&config.ftpPublicIP, "ftp-public-ip", "", "The public IP address for FTP passive mode (PASV) responses")
 
 	// Built-in anonymous user flags
 	flag.BoolVar(&config.enableAnonymous, "enable-anonymous", false, "Enable anonymous FTP access (RFC 1635)")
@@ -160,6 +162,10 @@ func processEnvironmentOverrides(config *appConfig) {
 
 	if envFtpWelcome := os.Getenv("FTP_WELCOME_MESSAGE"); envFtpWelcome != "" {
 		config.ftpWelcomeMessage = envFtpWelcome
+	}
+
+	if envFtpPublicIP := os.Getenv("FTP_PUBLIC_IP"); envFtpPublicIP != "" {
+		config.ftpPublicIP = envFtpPublicIP
 	}
 }
 
@@ -403,7 +409,7 @@ func main() {
 	}
 
 	// Start FTP server
-	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, config.ftpWelcomeMessage, mgr.GetClient())
+	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, mgr.GetClient())
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 
