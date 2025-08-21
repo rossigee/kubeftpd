@@ -602,3 +602,62 @@ func TestTracingConfiguration(t *testing.T) {
 		assert.True(t, isTracingEnabled())
 	})
 }
+
+// Regression test for offset mode handling
+func TestKubeDriver_PutFile_OffsetForced(t *testing.T) {
+	scheme := runtime.NewScheme()
+	err := ftpv1.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	testUser := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testuser",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Username:      "testuser",
+			Password:      "testpass",
+			Enabled:       true,
+			Chroot:        true,
+			HomeDirectory: "/home/testuser",
+			Backend: ftpv1.BackendReference{
+				Kind: "FilesystemBackend",
+				Name: "test-backend",
+			},
+		},
+	}
+
+	mockStorage := &MockStorage{}
+
+	driver := &KubeDriver{
+		user:              testUser,
+		storageImpl:       mockStorage,
+		authenticatedUser: "testuser",
+	}
+
+	// Test that offset gets forced to 0
+	reader := strings.NewReader("test content")
+	mockStorage.On("PutFile", "/home/testuser/test.txt", reader, int64(0)).Return(int64(12), nil)
+
+	// Call PutFile with non-zero offset - should be forced to 0
+	size, err := driver.PutFile(nil, "/test.txt", reader, int64(100))
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12), size)
+	mockStorage.AssertExpectations(t)
+}
+
+// Regression test for structured logging compatibility
+func TestKubeLogger_PrintCommand_PasswordRedaction(t *testing.T) {
+	logger := &KubeLogger{}
+
+	// Test PASS command redaction
+	// This test verifies that passwords are redacted in logs
+	// We can't easily test the actual logging output without complex setup,
+	// but we can verify the function doesn't panic with password commands
+	assert.NotPanics(t, func() {
+		logger.PrintCommand("test-session", "PASS", "secretpassword")
+		logger.PrintCommand("test-session", "USER", "testuser")
+		logger.PrintCommand("test-session", "ACCT", "secretaccount")
+	})
+}

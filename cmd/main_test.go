@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetDefaultFTPPort(t *testing.T) {
@@ -80,4 +82,37 @@ func TestGetDefaultFTPPortDocumentation(t *testing.T) {
 			t.Errorf("Non-root user should get port 2121, got %d", port)
 		}
 	}
+}
+
+// Regression test for PublicIP configuration
+func TestProcessEnvironmentOverrides_PublicIP(t *testing.T) {
+	// Test FTP_PUBLIC_IP environment variable
+	config := &appConfig{}
+
+	// Test without environment variable
+	processEnvironmentOverrides(config)
+	assert.Empty(t, config.ftpPublicIP)
+
+	// Test with environment variable
+	t.Setenv("FTP_PUBLIC_IP", "10.188.1.22")
+	processEnvironmentOverrides(config)
+	assert.Equal(t, "10.188.1.22", config.ftpPublicIP)
+}
+
+// Regression test for PASV port configuration
+func TestProcessEnvironmentOverrides_PASVPorts(t *testing.T) {
+	// Test FTP_PASSIVE_PORTS environment variable
+	config := &appConfig{}
+	t.Setenv("FTP_PASSIVE_PORTS", "10000-10019")
+	processEnvironmentOverrides(config)
+	assert.Equal(t, "10000-10019", config.ftpPasvPorts)
+
+	// Test FTP_PASSIVE_PORT_MIN/MAX environment variables (new test env)
+	config2 := &appConfig{}
+	// Clear the FTP_PASSIVE_PORTS from previous test
+	t.Setenv("FTP_PASSIVE_PORTS", "")
+	t.Setenv("FTP_PASSIVE_PORT_MIN", "11000")
+	t.Setenv("FTP_PASSIVE_PORT_MAX", "11020")
+	processEnvironmentOverrides(config2)
+	assert.Equal(t, "11000-11020", config2.ftpPasvPorts)
 }

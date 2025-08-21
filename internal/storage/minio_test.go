@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -406,4 +407,44 @@ func TestMinioStorage_resolvePath(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// Regression test for empty directory handling
+func TestMinioStorage_Stat_EmptyDirectory(t *testing.T) {
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "testuser",
+		},
+		Spec: ftpv1.UserSpec{
+			Username:      "testuser",
+			HomeDirectory: "/home/testuser",
+		},
+	}
+
+	mockBackend := &MockMinioBackend{}
+
+	storage := &minioStorage{
+		user:        user,
+		backend:     mockBackend,
+		basePath:    "/home/testuser",
+		currentDir:  "/home/testuser",
+		backendName: "test-backend",
+	}
+
+	// Mock StatObject to fail (file doesn't exist)
+	mockBackend.On("StatObject", "/home/testuser").Return((*backends.ObjectInfo)(nil), errors.New("object not found"))
+
+	// Mock ListObjects to succeed with empty result (empty directory)
+	mockBackend.On("ListObjects", "/home/testuser", false).Return([]*backends.ObjectInfo{}, nil)
+
+	fileInfo, err := storage.Stat("")
+
+	// Should return directory info, not error
+	assert.NoError(t, err)
+	assert.NotNil(t, fileInfo)
+	assert.True(t, fileInfo.IsDir())
+	assert.Equal(t, ".", fileInfo.Name()) // Empty path resolves to current directory "."
+	assert.Equal(t, int64(0), fileInfo.Size())
+
+	mockBackend.AssertExpectations(t)
 }
