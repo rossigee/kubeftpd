@@ -5,7 +5,7 @@ All notable changes to KubeFTPd will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.5.1] - 2025-08-21
 
 ### Added
 - **Enhanced FTP Operation Logging**: Comprehensive structured logging for all FTP operations
@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Traces for upload, download, append, and delete operations with timing and metadata
   - Attributes include user, path, backend type, bytes transferred, and duration
   - Operations: `ftp.upload`, `ftp.download`, `ftp.append`, `ftp.delete`
+- **Comprehensive MinIO Backend Test Coverage**: Added extensive test coverage for error scenarios
+  - Permission denied test cases for read/write/delete operations
+  - Edge case handling for file vs directory detection
+  - Enhanced test coverage for credential handling and connection scenarios
+- **Improved MinIO Storage Logic**: Enhanced empty directory handling and file extension detection
+  - Files with extensions now fail immediately if not found (no directory fallback)
+  - Better separation between file and directory detection logic
 
 ### Fixed
 - **FTP server startup failure handling**: Service now terminates immediately when FTP port binding fails
@@ -27,6 +34,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Helm chart default FTP port**: Changed from 21 to 2121 to match non-root security context
   - Resolves port binding failures in non-root deployments
   - Aligns with existing security best practices (`runAsNonRoot: true`)
+- **MinIO Storage Test Failures**: Fixed failing test cases in MinIO storage implementation
+  - Corrected mock expectations for `TestMinioStorage_Stat_EmptyDirectoryRegression`
+  - Fixed `TestMinioStorage_MakeDir` to properly mock `PutObject` call for directory creation
+  - Path resolution now correctly handles Go's `path.Join()` behavior with trailing slashes
+- **Lint Issues**: Resolved staticcheck warnings in E2E test files
+  - Removed redundant embedded field selectors (`ObjectMeta.Name` → `Name`)
+  - All linting rules now pass without warnings
+
+### Changed
+- **Version Consistency**: Updated version references across all build files
+  - Dockerfile: v0.3.0 → v0.5.1
+  - Makefile: v0.1.0 → v0.5.1  
+  - cmd/main.go: v0.3.1 → v0.5.1
+  - Ensures consistent version across all build artifacts
+
 
 ## [v0.4.2] - 2025-08-19
 
