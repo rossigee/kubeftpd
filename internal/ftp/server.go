@@ -455,9 +455,11 @@ func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) e
 }
 
 func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
-	getLogger().Info("[%s] MKDIR: %s", driver.getAuthenticatedUsername(), path)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP MKDIR operation", "username", username, "path", path)
 	if err := driver.ensureUserInitialized(); err != nil {
-		getLogger().Info("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "MKDIR failed during user initialization", "username", username, "path", path)
 		return err
 	}
 
@@ -469,9 +471,9 @@ func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
 
 	err = driver.storageImpl.MakeDir(resolvedPath)
 	if err != nil {
-		getLogger().Info("[%s] MKDIR FAILED: %s - %v", driver.getAuthenticatedUsername(), path, err)
+		logger.Error(err, "MKDIR operation failed", "username", username, "path", path, "resolved_path", resolvedPath)
 	} else {
-		getLogger().Info("[%s] MKDIR SUCCESS: %s", driver.getAuthenticatedUsername(), path)
+		logger.Info("MKDIR operation successful", "username", username, "path", path, "resolved_path", resolvedPath)
 	}
 	return err
 }
@@ -569,11 +571,13 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		defer span.End()
 	}
 
-	getLogger().Info("[%s] %s: %s", driver.getAuthenticatedUsername(), uploadType, path)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("FTP upload operation", "username", username, "operation", uploadType, "path", path)
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
-		getLogger().Info("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		logger.Error(err, "Upload failed during user initialization", "username", username, "operation", uploadType, "path", path)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -585,7 +589,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	// Validate chroot restrictions and get resolved path
 	resolvedPath, err := driver.validateChrootPath(path)
 	if err != nil {
-		getLogger().Info("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		logger.Info("Upload failed due to chroot restriction", "username", username, "operation", uploadType, "path", path, "error", err)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -598,7 +602,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	duration := time.Since(start)
 
 	if err != nil {
-		getLogger().Info("[%s] %s FAILED: %s - %v", driver.getAuthenticatedUsername(), uploadType, path, err)
+		logger.Error(err, "Upload operation failed", "username", username, "operation", uploadType, "path", path, "resolved_path", resolvedPath)
 		if span != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
@@ -607,7 +611,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		return 0, err
 	}
 
-	getLogger().Info("[%s] %s SUCCESS: %s (%d bytes, %v)", driver.getAuthenticatedUsername(), uploadType, path, size, duration)
+	logger.Info("Upload operation successful", "username", username, "operation", uploadType, "path", path, "resolved_path", resolvedPath, "size_bytes", size, "duration_ms", duration.Milliseconds())
 	if span != nil {
 		span.SetAttributes(
 			attribute.String("ftp.status", "success"),
@@ -730,18 +734,24 @@ func (driver *KubeDriver) GetMode(path string) (os.FileMode, error) {
 
 func (driver *KubeDriver) ChOwner(path string, owner string) error {
 	// Owner changes not supported - return success to avoid blocking operations
-	getLogger().Info("[%s] CHOWN: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, owner)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("CHOWN operation not supported, ignoring", "username", username, "path", path, "owner", owner)
 	return nil
 }
 
 func (driver *KubeDriver) ChGroup(path string, group string) error {
 	// Group changes not supported - return success to avoid blocking operations
-	getLogger().Info("[%s] CHGRP: %s to %s (not supported, ignoring)", driver.getAuthenticatedUsername(), path, group)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("CHGRP operation not supported, ignoring", "username", username, "path", path, "group", group)
 	return nil
 }
 
 func (driver *KubeDriver) ChMode(path string, mode os.FileMode) error {
 	// Mode changes not supported for most backends - return success to avoid blocking operations
-	getLogger().Info("[%s] CHMOD: %s to %v (not supported, ignoring)", driver.getAuthenticatedUsername(), path, mode)
+	logger := getLogger()
+	username := driver.getAuthenticatedUsername()
+	logger.Info("CHMOD operation not supported, ignoring", "username", username, "path", path, "mode", mode)
 	return nil
 }
