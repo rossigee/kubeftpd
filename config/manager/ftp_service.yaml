@@ -1,3 +1,6 @@
+---
+# Combined FTP service exposing both control port and passive data ports
+# This ensures both FTP control and PASV data connections use the same external IP
 apiVersion: v1
 kind: Service
 metadata:
@@ -10,53 +13,90 @@ metadata:
 spec:
   type: LoadBalancer
   ports:
-  - name: ftp
-    port: 21
-    targetPort: 21
-    protocol: TCP
-  - name: ftp-passive-range
-    port: 30000
-    targetPort: 30000
-    protocol: TCP
-  selector:
-    control-plane: controller-manager
-    app.kubernetes.io/name: kubeftpd
----
-# Service for passive port range (in production, use a range or multiple services)
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: kubeftpd
-    app.kubernetes.io/managed-by: kustomize
-    control-plane: controller-manager
-  name: ftp-passive-service
-  namespace: system
-spec:
-  type: LoadBalancer
-  ports:
-  - name: ftp-passive-30001
-    port: 30001
-    targetPort: 30001
-    protocol: TCP
-  - name: ftp-passive-30002
-    port: 30002
-    targetPort: 30002
-    protocol: TCP
-  - name: ftp-passive-30003
-    port: 30003
-    targetPort: 30003
-    protocol: TCP
-  - name: ftp-passive-30004
-    port: 30004
-    targetPort: 30004
-    protocol: TCP
-  - name: ftp-passive-30005
-    port: 30005
-    targetPort: 30005
-    protocol: TCP
-  # Note: In production, you would typically expose the full range 30000-30100
-  # This is a simplified example showing the pattern
+    - name: ftp  # FTP control port
+      port: 21
+      targetPort: 21
+      protocol: TCP
+    - name: ftp-passive-10000  # FTP passive data ports (10000-10019)
+      port: 10000
+      targetPort: 10000
+      protocol: TCP
+    - name: ftp-passive-10001
+      port: 10001
+      targetPort: 10001
+      protocol: TCP
+    - name: ftp-passive-10002
+      port: 10002
+      targetPort: 10002
+      protocol: TCP
+    - name: ftp-passive-10003
+      port: 10003
+      targetPort: 10003
+      protocol: TCP
+    - name: ftp-passive-10004
+      port: 10004
+      targetPort: 10004
+      protocol: TCP
+    - name: ftp-passive-10005
+      port: 10005
+      targetPort: 10005
+      protocol: TCP
+    - name: ftp-passive-10006
+      port: 10006
+      targetPort: 10006
+      protocol: TCP
+    - name: ftp-passive-10007
+      port: 10007
+      targetPort: 10007
+      protocol: TCP
+    - name: ftp-passive-10008
+      port: 10008
+      targetPort: 10008
+      protocol: TCP
+    - name: ftp-passive-10009
+      port: 10009
+      targetPort: 10009
+      protocol: TCP
+    - name: ftp-passive-10010
+      port: 10010
+      targetPort: 10010
+      protocol: TCP
+    - name: ftp-passive-10011
+      port: 10011
+      targetPort: 10011
+      protocol: TCP
+    - name: ftp-passive-10012
+      port: 10012
+      targetPort: 10012
+      protocol: TCP
+    - name: ftp-passive-10013
+      port: 10013
+      targetPort: 10013
+      protocol: TCP
+    - name: ftp-passive-10014
+      port: 10014
+      targetPort: 10014
+      protocol: TCP
+    - name: ftp-passive-10015
+      port: 10015
+      targetPort: 10015
+      protocol: TCP
+    - name: ftp-passive-10016
+      port: 10016
+      targetPort: 10016
+      protocol: TCP
+    - name: ftp-passive-10017
+      port: 10017
+      targetPort: 10017
+      protocol: TCP
+    - name: ftp-passive-10018
+      port: 10018
+      targetPort: 10018
+      protocol: TCP
+    - name: ftp-passive-10019
+      port: 10019
+      targetPort: 10019
+      protocol: TCP
   selector:
     control-plane: controller-manager
     app.kubernetes.io/name: kubeftpd

@@ -1,15 +1,9 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: ftp-passive-service
-  namespace: system
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-spec:
-  type: LoadBalancer
-  externalTrafficPolicy: Local
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 3600
+# This file is deprecated - passive ports are now combined in the main ftp-service
+# to ensure both control and data connections use the same external IP address.
+#
+# The ftp-service now includes all ports (21 + 10000-10019) in a single LoadBalancer.
+# This resolves PASV data connection issues where clients couldn't connect because
+# the server advertised the wrong IP address (pod IP instead of LoadBalancer IP).
+#
+# Migration: Remove this file and ensure all passive port configuration is done
+# through the main ftp-service patches.

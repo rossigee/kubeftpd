@@ -82,22 +82,26 @@ controller:
 
 # FTP Server configuration
 ftp:
-  # FTP service configuration
+  # Combined FTP service configuration (control + passive ports)
   service:
     type: LoadBalancer
-    port: 2121
+    port: 21  # Changed from 2121 to standard FTP port
     annotations: {}
     loadBalancerIP: ""
     loadBalancerSourceRanges: []
+    # Passive port range configuration (combined in single service)
+    passivePortRange:
+      min: 10000
+      max: 10019  # 20 ports should be adequate
 
-  # Passive FTP configuration
+  # Legacy passive configuration (deprecated - use service.passivePortRange instead)
   passive:
-    enabled: true
+    enabled: false  # Disabled - ports now combined in main service
     service:
       type: LoadBalancer
       portRange:
-        min: 30000
-        max: 30019  # 20 ports should be adequate
+        min: 10000
+        max: 10019
       annotations: {}
       loadBalancerIP: ""
       loadBalancerSourceRanges: []

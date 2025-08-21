@@ -1,3 +1,8 @@
+---
+# Combined FTP service production configuration
+# This service now includes both FTP control port (21) and all passive data ports (10000-10019)
+# to ensure clients can connect to both control and data channels using the same external IP
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -6,10 +11,12 @@ metadata:
   annotations:
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
     service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    # Enable session affinity to ensure PASV connections go to the same pod
+    service.beta.kubernetes.io/aws-load-balancer-attributes: "load_balancing.cross_zone.enabled=true"
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Local
   sessionAffinity: ClientIP
   sessionAffinityConfig:
     clientIP:
-      timeoutSeconds: 3600
+      timeoutSeconds: 3600  # Long timeout for FTP sessions

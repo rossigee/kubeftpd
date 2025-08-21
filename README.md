@@ -827,10 +827,13 @@ Structured JSON logging with configurable levels:
    - Check network connectivity to storage backend
    - Validate credentials and permissions
 
-4. **Passive mode issues**
-   - Ensure passive port range is accessible
-   - Check NAT/firewall configuration
-   - Verify client passive mode settings
+4. **PASV data connection failures** (`No route to host` on passive mode)
+   - **Problem**: Separate LoadBalancer services for control/data ports get different external IPs
+   - **Solution**: Use combined LoadBalancer service (default in v0.5.0+)
+   - **Check**: Verify both port 21 and passive ports (10000-10019) are on same service
+   - **Configuration**: Set `FTP_PUBLIC_IP` environment variable to LoadBalancer external IP
+   - **Legacy**: Ensure passive port range is accessible and check NAT/firewall configuration
+   - See [PASV_LOADBALANCER_FIX.md](PASV_LOADBALANCER_FIX.md) for detailed migration instructions
 
 5. **Webhook validation issues**
    - Check webhook pod status: `kubectl get pods -l app.kubernetes.io/component=webhook`
