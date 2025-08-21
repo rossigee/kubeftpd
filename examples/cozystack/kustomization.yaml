@@ -1,0 +1,74 @@
+---
+# Kustomization for Cozystack deployment with FluxCD
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: kubeftpd-cozystack
+  namespace: default
+
+# Resources to deploy
+resources:
+  - helmrelease.yaml
+  - helmrepository.yaml
+  - secret-demo-password.yaml
+
+# Namespace to deploy in
+namespace: default
+
+# Common labels for all resources
+commonLabels:
+  cozystack.io/application: kubeftpd
+  cozystack.io/platform: cozystack
+  cozystack.io/managed-by: fluxcd
+
+# Common annotations
+commonAnnotations:
+  cozystack.io/description: "KubeFTPd deployment for Cozystack platform"
+  cozystack.io/version: "v0.5.0"
+
+# Patches for Cozystack-specific modifications
+patches:
+  # Add Cozystack-specific service annotations
+  - target:
+      kind: HelmRelease
+      name: kubeftpd
+    patch: |
+      - op: add
+        path: /spec/values/ftp/service/annotations
+        value:
+          cozystack.io/expose: "tcp"
+          cozystack.io/port: "21"
+          cozystack.io/service-type: "ftp"
+
+# Generate ConfigMap for Cozystack documentation
+configMapGenerator:
+  - name: kubeftpd-cozystack-docs
+    literals:
+      - description="Kubernetes-native FTP service deployed on Cozystack"
+      - version="v0.5.0"
+      - documentation="https://github.com/rossigee/kubeftpd"
+      - cozystack-features="multi-tenant,fluxcd,networking"
+
+# Secret generator for demo credentials
+secretGenerator:
+  - name: kubeftpd-demo-password
+    literals:
+      - password=CozyStackDemo123!
+    type: Opaque
+
+# Prefix for generated resources
+namePrefix: ""
+
+# Suffix for generated resources
+nameSuffix: ""
+
+# Images to update (for GitOps workflows)
+images:
+  - name: ghcr.io/rossigee/kubeftpd
+    newTag: latest
+
+# Replicas override (for scaling in Cozystack)
+replicas:
+  - name: kubeftpd-controller
+    count: 1

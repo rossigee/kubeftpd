@@ -35,6 +35,8 @@ controller:
     capabilities:
       drop:
         - ALL
+      add:
+        - NET_BIND_SERVICE  # Allow binding to privileged ports (< 1024) as non-root
     seccompProfile:
       type: RuntimeDefault
 
@@ -93,6 +95,39 @@ ftp:
     passivePortRange:
       min: 10000
       max: 10019  # 20 ports should be adequate
+
+  # Gateway API support (alternative to LoadBalancer)
+  gateway:
+    enabled: false
+    gatewayName: ""  # Reference to existing Gateway resource name
+    # If gatewayName is empty, create a new Gateway
+    create: true
+    annotations: {}
+    labels: {}
+    # Gateway configuration (when create: true)
+    config:
+      gatewayClassName: ""  # Gateway class (e.g., "cilium", "istio", "nginx-gateway")
+      listeners:
+        # FTP control port listener
+        - name: ftp-control
+          port: 21
+          protocol: TCP
+          allowedRoutes:
+            namespaces:
+              from: Same
+        # FTP passive data ports listeners
+        # Note: Gateway API requires individual listeners per port
+        - name: ftp-passive
+          port: 10000
+          protocol: TCP
+          allowedRoutes:
+            namespaces:
+              from: Same
+      # External IP configuration for Gateway
+      addresses: []
+      # Example:
+      # - type: IPAddress
+      #   value: "10.0.0.1"
 
   # Legacy passive configuration (deprecated - use service.passivePortRange instead)
   passive:

@@ -1,0 +1,24 @@
+---
+# HelmRepository for KubeFTPd Helm chart in FluxCD
+# This should be created in the flux-system namespace for Cozystack
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: kubeftpd
+  namespace: flux-system
+  labels:
+    cozystack.io/application: kubeftpd
+    cozystack.io/component: helm-repository
+  annotations:
+    cozystack.io/description: "Helm repository for KubeFTPd charts"
+spec:
+  interval: 10m
+  url: https://rossigee.github.io/kubeftpd
+  timeout: 60s
+
+  # Optional: Verify chart signatures (if available)
+  # verify:
+  #   provider: cosign
+
+  # Suspend reconciliation if needed
+  suspend: false

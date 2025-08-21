@@ -12,6 +12,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  {{- if .Values.ftp.gateway.enabled }}
+  type: ClusterIP  # Use ClusterIP when Gateway is enabled
+  {{- else }}
   type: {{ .Values.ftp.service.type }}
   {{- if .Values.ftp.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.ftp.service.loadBalancerIP }}
@@ -19,6 +22,7 @@ spec:
   {{- with .Values.ftp.service.loadBalancerSourceRanges }}
   loadBalancerSourceRanges:
     {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- end }}
   ports:
   # FTP control port

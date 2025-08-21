@@ -1,0 +1,177 @@
+---
+# FluxCD HelmRelease for deploying KubeFTPd on Cozystack platform
+# This manifest can be applied directly to a Cozystack cluster
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kubeftpd
+  namespace: default  # Change to your tenant namespace
+  labels:
+    cozystack.io/application: kubeftpd
+    cozystack.io/component: ftp-server
+  annotations:
+    cozystack.io/description: "Kubernetes-native FTP service for file transfer"
+    cozystack.io/documentation: "https://github.com/rossigee/kubeftpd"
+spec:
+  interval: 10m
+  timeout: 5m
+
+  chart:
+    spec:
+      chart: kubeftpd
+      version: ">=0.5.0"  # Use latest compatible version
+      sourceRef:
+        kind: HelmRepository
+        name: kubeftpd
+        namespace: flux-system
+      interval: 5m
+
+  # Values for Cozystack deployment
+  values:
+    # Controller configuration optimized for Cozystack
+    controller:
+      image:
+        registry: ghcr.io
+        repository: rossigee/kubeftpd
+        tag: "latest"
+        pullPolicy: IfNotPresent
+
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        runAsUser: 65532
+        capabilities:
+          drop:
+            - ALL
+          add:
+            - NET_BIND_SERVICE  # Allow binding to privileged ports (< 1024) as non-root
+        seccompProfile:
+          type: RuntimeDefault
+
+    # FTP service configuration
+    ftp:
+      service:
+        type: ClusterIP  # Cozystack handles external access
+        port: 21
+        passivePortRange:
+          min: 10000
+          max: 10004  # Conservative range for multi-tenant
+
+      settings:
+        welcomeMessage: "Welcome to KubeFTPd on Cozystack"
+        idleTimeout: 300
+        maxConnections: 50
+
+    # Storage backend using Cozystack PVC
+    backends:
+      filesystem:
+        enabled: true
+        instances:
+          - name: cozystack-storage
+            basePath: /data
+            readOnly: false
+            fileMode: "0644"
+            dirMode: "0755"
+            maxFileSize: 104857600  # 100MB
+            pvc:
+              enabled: true
+              name: kubeftpd-storage
+              size: 5Gi
+              accessModes:
+                - ReadWriteOnce
+
+    # Demo user configuration
+    users:
+      admin:
+        enabled: false  # Disable admin in multi-tenant
+      additional:
+        - name: demo-user
+          username: "demo"
+          passwordSecret:
+            name: "kubeftpd-demo-password"
+            key: "password"
+          homeDirectory: "/demo"
+          backend:
+            kind: "FilesystemBackend"
+            name: "cozystack-storage"
+          permissions:
+            read: true
+            write: true
+            delete: false
+            list: true
+
+    # Security configuration
+    webhook:
+      enabled: true
+      validation:
+        passwordStrength:
+          enabled: true
+          minLength: 12
+          requireComplexity: true
+        production:
+          enabled: true
+          requireSecrets: true
+
+    # Network policy for multi-tenancy
+    networkPolicy:
+      enabled: true
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  name: cozystack-system
+        - ports:
+            - protocol: TCP
+              port: 21
+            - protocol: TCP
+              port: 8080
+
+    # High availability
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+
+    # Cozystack labels
+    commonLabels:
+      cozystack.io/application: kubeftpd
+      cozystack.io/component: ftp-server
+
+    commonAnnotations:
+      cozystack.io/description: "Kubernetes-native FTP service"
+      cozystack.io/documentation: "https://github.com/rossigee/kubeftpd"
+
+  # Post-deployment actions
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: kubeftpd-controller
+            patch: |
+              - op: add
+                path: /metadata/labels/cozystack.io~1managed
+                value: "true"
+
+  # Upgrade configuration
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+
+  # Rollback configuration
+  rollback:
+    cleanupOnFail: true
+    recreate: true
+
+  # Health checks
+  test:
+    enable: true
+    timeout: 2m
