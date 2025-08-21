@@ -47,14 +47,17 @@ func (s *minioStorage) Stat(filePath string) (os.FileInfo, error) {
 	// Try to get object info
 	objInfo, err := s.backend.StatObject(fullPath)
 	if err != nil {
-		// Maybe it's a directory, try listing it
-		objects, err := s.backend.ListObjects(fullPath, false)
+		// Maybe it's a directory, try listing it to see if the prefix exists
+		_, err := s.backend.ListObjects(fullPath, false)
 		duration := time.Since(start)
 
-		if err != nil || len(objects) == 0 {
+		if err != nil {
 			metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "error", duration)
 			return nil, fmt.Errorf("file not found: %s", filePath)
 		}
+
+		// Always treat a successful ListObjects call as a valid directory, even if empty
+		// This allows FTP clients to navigate to empty "directories" that are just key prefixes in object storage
 
 		metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "success", duration)
 		// Return directory info
