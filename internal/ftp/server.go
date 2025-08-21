@@ -573,7 +573,15 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 
 	logger := getLogger()
 	username := driver.getAuthenticatedUsername()
-	logger.Info("FTP upload operation", "username", username, "operation", uploadType, "path", path)
+	logger.Info("FTP upload operation", "username", username, "operation", uploadType, "path", path, "offset", offset)
+
+	// Storage backends don't support offset mode, so force offset to 0 for complete uploads
+	// This ensures compatibility with FTP clients that may request resumable uploads
+	if offset != 0 {
+		logger.Info("Forcing offset to 0 - backends don't support resumable uploads", "username", username, "path", path, "requested_offset", offset)
+		offset = 0
+		uploadType = "UPLOAD" // Change from APPEND to UPLOAD
+	}
 	start := time.Now()
 
 	if err := driver.ensureUserInitialized(); err != nil {
