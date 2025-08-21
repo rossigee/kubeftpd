@@ -47,27 +47,35 @@ func (s *minioStorage) Stat(filePath string) (os.FileInfo, error) {
 	// Try to get object info
 	objInfo, err := s.backend.StatObject(fullPath)
 	if err != nil {
-		// Maybe it's a directory, try listing it to see if the prefix exists
-		_, err := s.backend.ListObjects(fullPath, false)
-		duration := time.Since(start)
+		// Only treat as directory if the path ends with / or doesn't have a file extension
+		if strings.HasSuffix(filePath, "/") || path.Ext(filePath) == "" {
+			// Maybe it's a directory, try listing it to see if the prefix exists
+			_, err := s.backend.ListObjects(fullPath, false)
+			duration := time.Since(start)
 
-		if err != nil {
-			metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "error", duration)
-			return nil, fmt.Errorf("file not found: %s", filePath)
+			if err != nil {
+				metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "error", duration)
+				return nil, fmt.Errorf("file not found: %s", filePath)
+			}
+
+			// Always treat a successful ListObjects call as a valid directory, even if empty
+			// This allows FTP clients to navigate to empty "directories" that are just key prefixes in object storage
+
+			metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "success", duration)
+			// Return directory info
+			return &minioFileInfo{
+				name:    path.Base(filePath),
+				size:    0,
+				mode:    fs.ModeDir | 0755,
+				modTime: time.Now(),
+				isDir:   true,
+			}, nil
 		}
 
-		// Always treat a successful ListObjects call as a valid directory, even if empty
-		// This allows FTP clients to navigate to empty "directories" that are just key prefixes in object storage
-
-		metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "success", duration)
-		// Return directory info
-		return &minioFileInfo{
-			name:    path.Base(filePath),
-			size:    0,
-			mode:    fs.ModeDir | 0755,
-			modTime: time.Now(),
-			isDir:   true,
-		}, nil
+		// File with extension not found - return error immediately
+		duration := time.Since(start)
+		metrics.RecordBackendOperation(s.backendName, "MinioBackend", "stat", "error", duration)
+		return nil, fmt.Errorf("file not found: %s", filePath)
 	}
 
 	duration := time.Since(start)
