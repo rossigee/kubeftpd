@@ -7,7 +7,7 @@ ARG COMMIT=unknown
 ARG DATE=unknown
 
 # Install git and ca-certificates for Go modules and TLS
-RUN apk add --no-cache git=2.45.2-r0 ca-certificates=20240705-r0
+RUN apk add --no-cache git ca-certificates
 
 WORKDIR /workspace
 

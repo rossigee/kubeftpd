@@ -1,0 +1,2 @@
+ignored:
+  - DL3018  # Temporarily ignore package version pinning for Alpine packages that frequently change
