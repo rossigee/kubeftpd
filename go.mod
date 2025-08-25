@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.38.0
 	github.com/prometheus/client_golang v1.23.0
 	github.com/secsy/goftp v0.0.0-20200609142545-aa2de14babf4
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 	go.opentelemetry.io/otel v1.33.0
 	go.opentelemetry.io/otel/trace v1.33.0
 	goftp.io/server/v2 v2.0.1
