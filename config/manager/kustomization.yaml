@@ -1,9 +1,10 @@
-resources:
-- manager.yaml
-- ftp_service.yaml
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+resources:
+  - manager.yaml
+  - ftp_service.yaml
 images:
-- name: controller
-  newName: controller
-  newTag: latest
+  - name: controller
+    newName: ghcr.io/rossigee/kubeftpd
+    newTag: v0.5.1

@@ -1,33 +1,34 @@
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: kubeftpd-system
 
 resources:
-- ../default
+  - ../default
 
 patches:
-- path: manager_production_patch.yaml
-  target:
-    kind: Deployment
-    name: controller-manager
-- path: ftp_service_patch.yaml
-  target:
-    kind: Service
-    name: ftp-service
-- path: ftp_passive_service_patch.yaml
-  target:
-    kind: Service
-    name: ftp-passive-service
+  - path: manager_production_patch.yaml
+    target:
+      kind: Deployment
+      name: controller-manager
+  - path: ftp_service_patch.yaml
+    target:
+      kind: Service
+      name: ftp-service
+  - path: ftp_passive_service_patch.yaml
+    target:
+      kind: Service
+      name: ftp-passive-service
 
 images:
-- name: controller
-  newName: ghcr.io/rossigee/kubeftpd
-  newTag: latest
-- name: ghcr.io/rossigee/kubeftpd
-  newName: ghcr.io/rossigee/kubeftpd
-  newTag: v0.1.0
+  - name: controller
+    newName: ghcr.io/rossigee/kubeftpd
+    newTag: latest
+  - name: ghcr.io/rossigee/kubeftpd
+    newName: ghcr.io/rossigee/kubeftpd
+    newTag: v0.5.1
 
 replicas:
-- count: 2
-  name: kubeftpd-controller-manager
+  - count: 2
+    name: kubeftpd-controller-manager
