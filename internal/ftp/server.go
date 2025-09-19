@@ -178,8 +178,7 @@ func (factory *KubeDriverFactory) NewDriver() (server.Driver, error) {
 		client: factory.client,
 		auth:   factory.auth,
 	}
-	// Set the last authenticated user on the driver
-	driver.authenticatedUser = factory.auth.GetLastAuthUser()
+	// Note: authenticatedUser will be set via context mapping after authentication
 	return driver, nil
 }
 
@@ -681,13 +680,13 @@ func (driver *KubeDriver) ensureUserInitialized() error {
 
 // getAuthenticatedUsername returns the authenticated username for this driver instance
 func (driver *KubeDriver) getAuthenticatedUsername() string {
-	// Get the authenticated username from the auth system
-	if driver.auth != nil {
-		if lastUser := driver.auth.GetLastAuthUser(); lastUser != "" {
-			return lastUser
+	// Get the authenticated username from the context-specific mapping
+	if driver.auth != nil && driver.conn != nil {
+		if contextUser := driver.auth.GetContextUser(driver.conn); contextUser != "" {
+			return contextUser
 		}
 	}
-	// Fall back to the cached authenticatedUser (used in tests and after authentication)
+	// Fall back to the session-specific authenticatedUser (used in tests)
 	return driver.authenticatedUser
 }
 
@@ -701,6 +700,11 @@ func (driver *KubeDriver) getBackendType() string {
 
 // Close handles connection cleanup and metrics recording
 func (driver *KubeDriver) Close() error {
+	// Clean up context mapping to prevent memory leaks
+	if driver.auth != nil && driver.conn != nil {
+		driver.auth.ClearContextUser(driver.conn)
+	}
+
 	if driver.authenticatedUser != "" && !driver.sessionStart.IsZero() {
 		sessionDuration := time.Since(driver.sessionStart)
 		metrics.RecordConnectionClosed(driver.authenticatedUser, sessionDuration)

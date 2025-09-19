@@ -54,10 +54,9 @@ var (
 
 // KubeAuth implements FTP authentication against Kubernetes User CRDs
 type KubeAuth struct {
-	client           client.Client
-	userCache        sync.Map // Thread-safe cache for User objects: string -> *ftpv1.User
-	lastAuthUser     string   // Track the last authenticated user for driver setup
-	lastAuthUserLock sync.RWMutex
+	client         client.Client
+	userCache      sync.Map // Thread-safe cache for User objects: string -> *ftpv1.User
+	contextUserMap sync.Map // Thread-safe map for session-specific authentication: *server.Context -> string
 }
 
 // NewKubeAuth creates a new KubeAuth instance
@@ -142,7 +141,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 
 	if authenticated {
 		logger.Info("User authenticated successfully", "username", username, "user_type", userType)
-		auth.setLastAuthUser(username)
+		auth.setContextUser(ctx, username)
 		metrics.RecordUserLogin(username, "success")
 		return true, nil
 	}
@@ -264,18 +263,22 @@ func (auth *KubeAuth) DeleteUser(username string) {
 	logger.Info("Deleted user from cache", "username", username)
 }
 
-// setLastAuthUser safely sets the last authenticated user
-func (auth *KubeAuth) setLastAuthUser(username string) {
-	auth.lastAuthUserLock.Lock()
-	defer auth.lastAuthUserLock.Unlock()
-	auth.lastAuthUser = username
+// setContextUser safely sets the authenticated user for a specific context
+func (auth *KubeAuth) setContextUser(ctx *server.Context, username string) {
+	auth.contextUserMap.Store(ctx, username)
 }
 
-// GetLastAuthUser safely gets the last authenticated user
-func (auth *KubeAuth) GetLastAuthUser() string {
-	auth.lastAuthUserLock.RLock()
-	defer auth.lastAuthUserLock.RUnlock()
-	return auth.lastAuthUser
+// GetContextUser safely gets the authenticated user for a specific context
+func (auth *KubeAuth) GetContextUser(ctx *server.Context) string {
+	if username, ok := auth.contextUserMap.Load(ctx); ok {
+		return username.(string)
+	}
+	return ""
+}
+
+// ClearContextUser removes the authenticated user mapping for a specific context
+func (auth *KubeAuth) ClearContextUser(ctx *server.Context) {
+	auth.contextUserMap.Delete(ctx)
 }
 
 // getUserPassword retrieves the user's password from either direct field or secret
