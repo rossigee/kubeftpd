@@ -644,14 +644,20 @@ func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) 
 	}
 
 	// Get the authenticated username from the auth system
-	// Use provided context if available, otherwise fall back to stored connection
+	// Try multiple approaches in order of preference
 	var username string
 	if ctx != nil && driver.auth != nil {
-		// Use the current operation context (preferred)
+		// 1. Try context-based lookup (current context)
 		username = driver.auth.GetContextUser(ctx)
+
+		// 2. If context lookup fails, try session-based lookup
+		if username == "" {
+			sessionID := driver.auth.getSessionID(ctx)
+			username = driver.auth.GetSessionUser(sessionID)
+		}
 	}
 	if username == "" {
-		// Fall back to the stored connection approach
+		// 3. Fall back to the stored connection approach (legacy)
 		username = driver.getAuthenticatedUsername()
 	}
 

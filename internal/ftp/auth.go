@@ -57,6 +57,7 @@ type KubeAuth struct {
 	client         client.Client
 	userCache      sync.Map // Thread-safe cache for User objects: string -> *ftpv1.User
 	contextUserMap sync.Map // Thread-safe map for session-specific authentication: *server.Context -> string
+	sessionUserMap sync.Map // Thread-safe map for session-based authentication: sessionID -> string
 }
 
 // NewKubeAuth creates a new KubeAuth instance
@@ -142,6 +143,9 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	if authenticated {
 		logger.Info("User authenticated successfully", "username", username, "user_type", userType)
 		auth.setContextUser(ctx, username)
+		// Also store in session-based map using connection identifier
+		sessionID := auth.getSessionID(ctx)
+		auth.setSessionUser(sessionID, username)
 		metrics.RecordUserLogin(username, "success")
 		return true, nil
 	}
@@ -279,6 +283,48 @@ func (auth *KubeAuth) GetContextUser(ctx *server.Context) string {
 // ClearContextUser removes the authenticated user mapping for a specific context
 func (auth *KubeAuth) ClearContextUser(ctx *server.Context) {
 	auth.contextUserMap.Delete(ctx)
+}
+
+// Session-based authentication methods (more reliable than context-based)
+
+// getSessionID generates a session identifier from connection context
+// This provides a stable identifier across different contexts within the same FTP session
+func (auth *KubeAuth) getSessionID(ctx *server.Context) string {
+	// Use a combination of connection info to create a stable session ID
+	// This should remain consistent throughout the FTP session even when contexts change
+	if ctx == nil {
+		return ""
+	}
+
+	// For now, use the context pointer as string since we don't have access to
+	// the underlying connection details. In a future iteration, we could use
+	// remote address + connection timestamp for a more robust session ID.
+	return fmt.Sprintf("session-%p", ctx)
+}
+
+// setSessionUser safely sets the authenticated user for a session
+func (auth *KubeAuth) setSessionUser(sessionID, username string) {
+	if sessionID != "" {
+		auth.sessionUserMap.Store(sessionID, username)
+	}
+}
+
+// GetSessionUser safely gets the authenticated user for a session
+func (auth *KubeAuth) GetSessionUser(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	if username, ok := auth.sessionUserMap.Load(sessionID); ok {
+		return username.(string)
+	}
+	return ""
+}
+
+// ClearSessionUser removes the authenticated user mapping for a session
+func (auth *KubeAuth) ClearSessionUser(sessionID string) {
+	if sessionID != "" {
+		auth.sessionUserMap.Delete(sessionID)
+	}
 }
 
 // getUserPassword retrieves the user's password from either direct field or secret

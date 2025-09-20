@@ -3,8 +3,8 @@ apiVersion: v2
 name: kubeftpd
 description: A Kubernetes-native FTP server with multiple storage backend support
 type: application
-version: 0.6.3
-appVersion: "v0.6.3"
+version: 0.6.4
+appVersion: "v0.6.4"
 keywords:
   - ftp
   - kubernetes
