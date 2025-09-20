@@ -290,16 +290,23 @@ func (auth *KubeAuth) ClearContextUser(ctx *server.Context) {
 // getSessionID generates a session identifier from connection context
 // This provides a stable identifier across different contexts within the same FTP session
 func (auth *KubeAuth) getSessionID(ctx *server.Context) string {
-	// Use a combination of connection info to create a stable session ID
-	// This should remain consistent throughout the FTP session even when contexts change
-	if ctx == nil {
+	// Use the FTP session's remote address:port which remains stable throughout the connection
+	if ctx == nil || ctx.Sess == nil {
 		return ""
 	}
 
-	// For now, use the context pointer as string since we don't have access to
-	// the underlying connection details. In a future iteration, we could use
-	// remote address + connection timestamp for a more robust session ID.
-	return fmt.Sprintf("session-%p", ctx)
+	// Use the remote address:port combination as a stable session identifier
+	// This remains consistent across all contexts within the same FTP connection
+	// and ensures uniqueness even when multiple connections come from the same IP
+	remoteAddr := ctx.Sess.RemoteAddr()
+	if remoteAddr == nil {
+		// Fallback to context pointer if remote address is not available
+		return fmt.Sprintf("session-%p", ctx)
+	}
+
+	// remoteAddr.String() already includes both IP and port (e.g., "192.168.1.100:54321")
+	// This ensures each connection gets a unique session ID even from the same client IP
+	return fmt.Sprintf("ftp-session-%s", remoteAddr.String())
 }
 
 // setSessionUser safely sets the authenticated user for a session

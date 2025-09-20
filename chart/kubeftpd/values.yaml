@@ -14,7 +14,7 @@ controller:
   image:
     registry: ghcr.io
     repository: rossigee/kubeftpd
-    tag: "v0.6.4"
+    tag: "v0.6.6"
     pullPolicy: IfNotPresent
     pullSecrets: []
 
