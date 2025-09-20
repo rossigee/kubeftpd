@@ -283,7 +283,7 @@ func (driver *KubeDriver) ChangeDir(ctx *server.Context, path string) error {
 	username := driver.getAuthenticatedUsername()
 	logger.Info("FTP ChangeDir operation", "username", username, "path", path)
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "ChangeDir failed during user initialization", "username", username, "path", path)
 		return err
 	}
@@ -309,7 +309,7 @@ func (driver *KubeDriver) Stat(ctx *server.Context, path string) (os.FileInfo, e
 	username := driver.getAuthenticatedUsername()
 	logger.Info("FTP Stat operation", "username", username, "path", path)
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "Stat failed during user initialization", "username", username, "path", path)
 		return nil, err
 	}
@@ -341,7 +341,7 @@ func (driver *KubeDriver) ListDir(ctx *server.Context, path string, callback fun
 	logger := getLogger()
 	logger.Info("FTP LIST operation", "username", username, "path", path)
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "LIST failed during user initialization", "username", username, "path", path)
 		return err
 	}
@@ -366,7 +366,7 @@ func (driver *KubeDriver) DeleteDir(ctx *server.Context, path string) error {
 	logger := getLogger()
 	logger.Info("FTP RMDIR operation", "username", username, "path", path)
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "RMDIR failed during user initialization", "username", username, "path", path)
 		return err
 	}
@@ -391,7 +391,7 @@ func (driver *KubeDriver) DeleteFile(ctx *server.Context, path string) error {
 	username := driver.getAuthenticatedUsername()
 	logger.Info("FTP DELETE operation", "username", username, "path", path)
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "DELETE failed during user initialization", "username", username, "path", path)
 		return err
 	}
@@ -422,7 +422,7 @@ func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) e
 	username := driver.getAuthenticatedUsername()
 	logger.Info("FTP RENAME operation", "username", username, "from_path", fromPath, "to_path", toPath)
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "RENAME failed during user initialization", "username", username, "from_path", fromPath, "to_path", toPath)
 		return err
 	}
@@ -457,7 +457,7 @@ func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
 	logger := getLogger()
 	username := driver.getAuthenticatedUsername()
 	logger.Info("FTP MKDIR operation", "username", username, "path", path)
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "MKDIR failed during user initialization", "username", username, "path", path)
 		return err
 	}
@@ -497,7 +497,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 	logger.Info("FTP DOWNLOAD operation", "username", username, "path", path, "offset", offset)
 	start := time.Now()
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "DOWNLOAD failed during user initialization", "username", username, "path", path)
 		if span != nil {
 			span.RecordError(err)
@@ -583,7 +583,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	}
 	start := time.Now()
 
-	if err := driver.ensureUserInitialized(); err != nil {
+	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "Upload failed during user initialization", "username", username, "operation", uploadType, "path", path)
 		if span != nil {
 			span.RecordError(err)
@@ -634,18 +634,32 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 
 // ensureUserInitialized ensures the driver has an authenticated user and storage configured
 func (driver *KubeDriver) ensureUserInitialized() error {
+	return driver.ensureUserInitializedWithContext(nil)
+}
+
+func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) error {
 	// If already initialized, return
 	if driver.user != nil && driver.storageImpl != nil {
 		return nil
 	}
 
 	// Get the authenticated username from the auth system
-	username := driver.getAuthenticatedUsername()
+	// Use provided context if available, otherwise fall back to stored connection
+	var username string
+	if ctx != nil && driver.auth != nil {
+		// Use the current operation context (preferred)
+		username = driver.auth.GetContextUser(ctx)
+	}
+	if username == "" {
+		// Fall back to the stored connection approach
+		username = driver.getAuthenticatedUsername()
+	}
+
 	logger := getLogger()
 
 	if username == "" {
 		logger.Error(nil, "ensureUserInitialized failed: no authenticated username available",
-			"conn_nil", driver.conn == nil, "auth_nil", driver.auth == nil)
+			"ctx_provided", ctx != nil, "conn_nil", driver.conn == nil, "auth_nil", driver.auth == nil)
 		return fmt.Errorf("user not authenticated")
 	}
 
