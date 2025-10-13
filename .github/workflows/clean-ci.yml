@@ -71,7 +71,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload security results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && hashFiles('gosec.sarif') != ''
         with:
           sarif_file: gosec.sarif
