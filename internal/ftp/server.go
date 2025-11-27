@@ -723,6 +723,9 @@ func (driver *KubeDriver) Close() error {
 	// Clean up context mapping to prevent memory leaks
 	if driver.auth != nil && driver.conn != nil {
 		driver.auth.ClearContextUser(driver.conn)
+		// Also clear session mapping
+		sessionID := driver.auth.getSessionID(driver.conn)
+		driver.auth.ClearSessionUser(sessionID)
 	}
 
 	if driver.authenticatedUser != "" && !driver.sessionStart.IsZero() {
