@@ -27,7 +27,7 @@ images:
     newTag: latest
   - name: ghcr.io/rossigee/kubeftpd
     newName: ghcr.io/rossigee/kubeftpd
-    newTag: v0.6.7
+    newTag: v0.6.8
 
 replicas:
   - count: 2
