@@ -733,6 +733,9 @@ func (driver *KubeDriver) Close() error {
 		metrics.RecordConnectionClosed(driver.authenticatedUser, sessionDuration)
 		metrics.RecordUserSession(driver.authenticatedUser, sessionDuration)
 	}
+
+	// Break reference cycle to allow garbage collection
+	driver.conn = nil
 	return nil
 }
 
