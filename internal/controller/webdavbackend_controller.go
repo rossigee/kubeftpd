@@ -74,30 +74,49 @@ func (r *WebDavBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.handleWebDavBackendDeletion(ctx, backend)
 	}
 
-	// Test connectivity to WebDAV
-	if err := r.testWebDavConnectivity(ctx, backend); err != nil {
-		log.Error(err, "WebDAV connectivity test failed", "backend", backend.Name)
+	// Only test connectivity if this is a new backend or if the spec has changed
+	shouldTestConnectivity := r.shouldTestConnectivity(backend)
+
+	if shouldTestConnectivity {
+		// Test connectivity to WebDAV
+		if err := r.testWebDavConnectivity(ctx, backend); err != nil {
+			log.Error(err, "WebDAV connectivity test failed", "backend", backend.Name)
+			r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				Reason:             "ConnectionFailed",
+				Message:            err.Error(),
+				LastTransitionTime: metav1.Now(),
+			})
+			// Mark that we tested connectivity
+			r.markConnectivityTested(backend)
+			err := r.Status().Update(ctx, backend)
+			if err != nil {
+				log.Error(err, "Failed to update connectivity test timestamp")
+			}
+			return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
+		}
+
+		// Update status to ready
 		r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
 			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			Reason:             "ConnectionFailed",
-			Message:            err.Error(),
+			Status:             metav1.ConditionTrue,
+			Reason:             "ConnectionSuccessful",
+			Message:            "Successfully connected to WebDAV backend",
 			LastTransitionTime: metav1.Now(),
 		})
-		return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
+
+		// Mark that we tested connectivity
+		r.markConnectivityTested(backend)
+		err := r.Status().Update(ctx, backend)
+		if err != nil {
+			log.Error(err, "Failed to update connectivity test timestamp")
+		}
 	}
 
-	// Update status to ready
-	r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionTrue,
-		Reason:             "ConnectionSuccessful",
-		Message:            "Successfully connected to WebDAV backend",
-		LastTransitionTime: metav1.Now(),
-	})
-
 	log.Info("WebDavBackend reconciliation completed", "backend", backend.Name)
-	return ctrl.Result{RequeueAfter: time.Minute * 10}, nil
+	// Don't requeue - only reconcile when the resource changes
+	return ctrl.Result{}, nil
 }
 
 // testWebDavConnectivity tests connectivity to the WebDAV backend
@@ -110,6 +129,24 @@ func (r *WebDavBackendReconciler) testWebDavConnectivity(ctx context.Context, ba
 
 	// If we get here, the connection was successful
 	return nil
+}
+
+// shouldTestConnectivity determines if we should test connectivity for this backend
+func (r *WebDavBackendReconciler) shouldTestConnectivity(backend *ftpv1.WebDavBackend) bool {
+	// Always test if we haven't tested before
+	if backend.Status.LastConnectivityTest.IsZero() {
+		return true
+	}
+
+	// Test if the spec has changed since last test
+	// Compare resource version or generation
+	return backend.Status.ObservedGeneration != backend.Generation
+}
+
+// markConnectivityTested updates the status to indicate connectivity was tested
+func (r *WebDavBackendReconciler) markConnectivityTested(backend *ftpv1.WebDavBackend) {
+	backend.Status.LastConnectivityTest = metav1.Now()
+	backend.Status.ObservedGeneration = backend.Generation
 }
 
 // updateWebDavBackendStatus updates the backend status with the given condition

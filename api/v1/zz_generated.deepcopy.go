@@ -240,6 +240,7 @@ func (in *MinioBackendStatus) DeepCopyInto(out *MinioBackendStatus) {
 		in, out := &in.LastChecked, &out.LastChecked
 		*out = (*in).DeepCopy()
 	}
+	in.LastConnectivityTest.DeepCopyInto(&out.LastConnectivityTest)
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))
@@ -563,6 +564,7 @@ func (in *WebDavBackendStatus) DeepCopyInto(out *WebDavBackendStatus) {
 		in, out := &in.LastChecked, &out.LastChecked
 		*out = (*in).DeepCopy()
 	}
+	in.LastConnectivityTest.DeepCopyInto(&out.LastConnectivityTest)
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))

@@ -74,30 +74,49 @@ func (r *MinioBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleMinioBackendDeletion(ctx, backend)
 	}
 
-	// Test connectivity to MinIO
-	if err := r.testMinioConnectivity(ctx, backend); err != nil {
-		log.Error(err, "MinIO connectivity test failed", "backend", backend.Name)
+	// Only test connectivity if this is a new backend or if the spec has changed
+	shouldTestConnectivity := r.shouldTestConnectivity(backend)
+
+	if shouldTestConnectivity {
+		// Test connectivity to MinIO
+		if err := r.testMinioConnectivity(ctx, backend); err != nil {
+			log.Error(err, "MinIO connectivity test failed", "backend", backend.Name)
+			r.updateMinioBackendStatus(ctx, backend, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				Reason:             "ConnectionFailed",
+				Message:            err.Error(),
+				LastTransitionTime: metav1.Now(),
+			})
+			// Mark that we tested connectivity
+			r.markConnectivityTested(backend)
+			err := r.Status().Update(ctx, backend)
+			if err != nil {
+				log.Error(err, "Failed to update connectivity test timestamp")
+			}
+			return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
+		}
+
+		// Update status to ready
 		r.updateMinioBackendStatus(ctx, backend, metav1.Condition{
 			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			Reason:             "ConnectionFailed",
-			Message:            err.Error(),
+			Status:             metav1.ConditionTrue,
+			Reason:             "ConnectionSuccessful",
+			Message:            "Successfully connected to MinIO backend",
 			LastTransitionTime: metav1.Now(),
 		})
-		return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
+
+		// Mark that we tested connectivity
+		r.markConnectivityTested(backend)
+		err := r.Status().Update(ctx, backend)
+		if err != nil {
+			log.Error(err, "Failed to update connectivity test timestamp")
+		}
 	}
 
-	// Update status to ready
-	r.updateMinioBackendStatus(ctx, backend, metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionTrue,
-		Reason:             "ConnectionSuccessful",
-		Message:            "Successfully connected to MinIO backend",
-		LastTransitionTime: metav1.Now(),
-	})
-
 	log.Info("MinioBackend reconciliation completed", "backend", backend.Name)
-	return ctrl.Result{RequeueAfter: time.Minute * 10}, nil
+	// Don't requeue - only reconcile when the resource changes
+	return ctrl.Result{}, nil
 }
 
 // testMinioConnectivity tests connectivity to the MinIO backend
@@ -110,6 +129,24 @@ func (r *MinioBackendReconciler) testMinioConnectivity(ctx context.Context, back
 
 	// If we get here, the connection was successful
 	return nil
+}
+
+// shouldTestConnectivity determines if we should test connectivity for this backend
+func (r *MinioBackendReconciler) shouldTestConnectivity(backend *ftpv1.MinioBackend) bool {
+	// Always test if we haven't tested before
+	if backend.Status.LastConnectivityTest.IsZero() {
+		return true
+	}
+
+	// Test if the spec has changed since last test
+	// Compare resource version or generation
+	return backend.Status.ObservedGeneration != backend.Generation
+}
+
+// markConnectivityTested updates the status to indicate connectivity was tested
+func (r *MinioBackendReconciler) markConnectivityTested(backend *ftpv1.MinioBackend) {
+	backend.Status.LastConnectivityTest = metav1.Now()
+	backend.Status.ObservedGeneration = backend.Generation
 }
 
 // updateMinioBackendStatus updates the backend status with the given condition

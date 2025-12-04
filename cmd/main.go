@@ -24,12 +24,13 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"fmt"
+	"net/http"
+	"net/http/pprof"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
-	"fmt"
-	"net/http"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -90,6 +91,8 @@ type appConfig struct {
 	adminHomeDir        string
 	adminBackendKind    string
 	adminBackendName    string
+	// Profiling settings
+	enableProfiling bool
 }
 
 func getDefaultFTPPort() int {
@@ -133,6 +136,9 @@ func parseFlags() (*appConfig, zap.Options) {
 	flag.StringVar(&config.adminBackendKind, "admin-backend-kind", "FilesystemBackend", "Backend kind for admin user")
 	flag.StringVar(&config.adminBackendName, "admin-backend-name", "admin-backend", "Backend name for admin user")
 
+	// Profiling flags
+	flag.BoolVar(&config.enableProfiling, "enable-profiling", false, "Enable Go profiling endpoints (/debug/pprof/)")
+
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -166,6 +172,15 @@ func processEnvironmentOverrides(config *appConfig) {
 
 	if envFtpPublicIP := os.Getenv("FTP_PUBLIC_IP"); envFtpPublicIP != "" {
 		config.ftpPublicIP = envFtpPublicIP
+	}
+
+	if envEnableProfiling := os.Getenv("ENABLE_PROFILING"); envEnableProfiling != "" {
+		if enabled, err := strconv.ParseBool(envEnableProfiling); err == nil {
+			config.enableProfiling = enabled
+		} else {
+			setupLog.Error(err, "invalid ENABLE_PROFILING environment variable", "value", envEnableProfiling)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -222,12 +237,22 @@ func setupWebhookServer(config *appConfig, tlsOpts []func(*tls.Config)) (webhook
 	return webhookServer, webhookCertWatcher, nil
 }
 
-func createHTTPHandler() *http.ServeMux {
+func createHTTPHandler(enableProfiling bool) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"service":"kubeftpd","version":"%s","commit":"%s","date":"%s","status":"running"}`+"\n", version, commit, date)
 	})
+
+	// Add pprof handlers if profiling is enabled
+	if enableProfiling {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
+
 	return mux
 }
 
@@ -341,7 +366,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mux := createHTTPHandler()
+	mux := createHTTPHandler(config.enableProfiling)
 	metricsServerOptions, metricsCertWatcher, err := setupMetricsServer(config, tlsOpts, mux)
 	if err != nil {
 		setupLog.Error(err, "Failed to setup metrics server")

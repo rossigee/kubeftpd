@@ -186,20 +186,20 @@ func (factory *KubeDriverFactory) NewDriver() (server.Driver, error) {
 type KubeDriver struct {
 	client            client.Client
 	auth              *KubeAuth
-	conn              *server.Context
 	user              *ftpv1.User
 	storageImpl       storage.Storage
 	authenticatedUser string    // Track the authenticated username
 	sessionStart      time.Time // Track session start time
 	clientIP          string    // Track client IP
+	sessionID         string    // Track session ID for cleanup
 }
 
 func (driver *KubeDriver) Init(conn *server.Context) {
 	logger := getLogger()
 	logger.Info("Initializing FTP driver for connection")
 
-	// Store connection reference to get authenticated user later
-	driver.conn = conn
+	// Store session ID for authenticated user lookup
+	driver.sessionID = driver.auth.getSessionID(conn)
 	driver.sessionStart = time.Now()
 
 	// Extract client IP - use placeholder for now since RemoteAddr is not directly accessible
@@ -644,28 +644,22 @@ func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) 
 	}
 
 	// Get the authenticated username from the auth system
-	// Try multiple approaches in order of preference
 	var username string
 	if ctx != nil && driver.auth != nil {
-		// 1. Try context-based lookup (current context)
-		username = driver.auth.GetContextUser(ctx)
-
-		// 2. If context lookup fails, try session-based lookup
-		if username == "" {
-			sessionID := driver.auth.getSessionID(ctx)
-			username = driver.auth.GetSessionUser(sessionID)
-		}
+		// Try session-based lookup
+		sessionID := driver.auth.getSessionID(ctx)
+		username = driver.auth.GetSessionUser(sessionID)
 	}
 	if username == "" {
-		// 3. Fall back to the stored connection approach (legacy)
-		username = driver.getAuthenticatedUsername()
+		// Fall back to the stored authenticatedUser
+		username = driver.authenticatedUser
 	}
 
 	logger := getLogger()
 
 	if username == "" {
 		logger.Error(nil, "ensureUserInitialized failed: no authenticated username available",
-			"ctx_provided", ctx != nil, "conn_nil", driver.conn == nil, "auth_nil", driver.auth == nil)
+			"ctx_provided", ctx != nil, "auth_nil", driver.auth == nil)
 		return fmt.Errorf("user not authenticated")
 	}
 
@@ -700,13 +694,13 @@ func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) 
 
 // getAuthenticatedUsername returns the authenticated username for this driver instance
 func (driver *KubeDriver) getAuthenticatedUsername() string {
-	// Get the authenticated username from the context-specific mapping
-	if driver.auth != nil && driver.conn != nil {
-		if contextUser := driver.auth.GetContextUser(driver.conn); contextUser != "" {
-			return contextUser
+	// Get the authenticated username from the session-specific mapping
+	if driver.auth != nil && driver.sessionID != "" {
+		if sessionUser := driver.auth.GetSessionUser(driver.sessionID); sessionUser != "" {
+			return sessionUser
 		}
 	}
-	// Fall back to the session-specific authenticatedUser (used in tests)
+	// Fall back to the stored authenticatedUser (used in tests)
 	return driver.authenticatedUser
 }
 
@@ -720,12 +714,9 @@ func (driver *KubeDriver) getBackendType() string {
 
 // Close handles connection cleanup and metrics recording
 func (driver *KubeDriver) Close() error {
-	// Clean up context mapping to prevent memory leaks
-	if driver.auth != nil && driver.conn != nil {
-		driver.auth.ClearContextUser(driver.conn)
-		// Also clear session mapping
-		sessionID := driver.auth.getSessionID(driver.conn)
-		driver.auth.ClearSessionUser(sessionID)
+	// Clean up session mapping to prevent memory leaks
+	if driver.auth != nil && driver.sessionID != "" {
+		driver.auth.ClearSessionUser(driver.sessionID)
 	}
 
 	if driver.authenticatedUser != "" && !driver.sessionStart.IsZero() {
@@ -734,8 +725,6 @@ func (driver *KubeDriver) Close() error {
 		metrics.RecordUserSession(driver.authenticatedUser, sessionDuration)
 	}
 
-	// Break reference cycle to allow garbage collection
-	driver.conn = nil
 	return nil
 }
 

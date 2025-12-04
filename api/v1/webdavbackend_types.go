@@ -102,6 +102,14 @@ type WebDavBackendStatus struct {
 	// +optional
 	LastChecked *metav1.Time `json:"lastChecked,omitempty"`
 
+	// LastConnectivityTest timestamp of the last connectivity test
+	// +optional
+	LastConnectivityTest metav1.Time `json:"lastConnectivityTest,omitempty"`
+
+	// ObservedGeneration represents the generation observed by the controller
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// ActiveConnections tracks the number of active FTP connections using this backend
 	// +optional
 	ActiveConnections int32 `json:"activeConnections,omitempty"`

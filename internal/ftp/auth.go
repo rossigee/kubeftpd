@@ -56,7 +56,6 @@ var (
 type KubeAuth struct {
 	client         client.Client
 	userCache      sync.Map // Thread-safe cache for User objects: string -> *ftpv1.User
-	contextUserMap sync.Map // Thread-safe map for session-specific authentication: *server.Context -> string
 	sessionUserMap sync.Map // Thread-safe map for session-based authentication: sessionID -> string
 }
 
@@ -142,8 +141,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 
 	if authenticated {
 		logger.Info("User authenticated successfully", "username", username, "user_type", userType)
-		auth.setContextUser(ctx, username)
-		// Also store in session-based map using connection identifier
+		// Store in session-based map using connection identifier
 		sessionID := auth.getSessionID(ctx)
 		auth.setSessionUser(sessionID, username)
 		metrics.RecordUserLogin(username, "success")
@@ -267,25 +265,7 @@ func (auth *KubeAuth) DeleteUser(username string) {
 	logger.Info("Deleted user from cache", "username", username)
 }
 
-// setContextUser safely sets the authenticated user for a specific context
-func (auth *KubeAuth) setContextUser(ctx *server.Context, username string) {
-	auth.contextUserMap.Store(ctx, username)
-}
-
-// GetContextUser safely gets the authenticated user for a specific context
-func (auth *KubeAuth) GetContextUser(ctx *server.Context) string {
-	if username, ok := auth.contextUserMap.Load(ctx); ok {
-		return username.(string)
-	}
-	return ""
-}
-
-// ClearContextUser removes the authenticated user mapping for a specific context
-func (auth *KubeAuth) ClearContextUser(ctx *server.Context) {
-	auth.contextUserMap.Delete(ctx)
-}
-
-// Session-based authentication methods (more reliable than context-based)
+// Session-based authentication methods
 
 // getSessionID generates a session identifier from connection context
 // This provides a stable identifier across different contexts within the same FTP session
