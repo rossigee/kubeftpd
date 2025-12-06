@@ -273,3 +273,9 @@ func (fi *minioFileInfo) IsDir() bool        { return fi.isDir }
 func (fi *minioFileInfo) Owner() string      { return "" }
 func (fi *minioFileInfo) Group() string      { return "" }
 func (fi *minioFileInfo) Sys() interface{}   { return nil }
+
+// Close cleans up resources
+func (s *minioStorage) Close() error {
+	// MinIO client does not require explicit closing
+	return nil
+}

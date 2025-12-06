@@ -274,3 +274,9 @@ func (fi *filesystemFileInfo) IsDir() bool        { return fi.isDir }
 func (fi *filesystemFileInfo) Owner() string      { return "" }
 func (fi *filesystemFileInfo) Group() string      { return "" }
 func (fi *filesystemFileInfo) Sys() interface{}   { return nil }
+
+// Close cleans up resources
+func (s *filesystemStorage) Close() error {
+	// Filesystem backend does not require explicit closing
+	return nil
+}

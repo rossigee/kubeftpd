@@ -20,7 +20,6 @@ import (
 	"context"
 	"os"
 	"syscall"
-	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -105,8 +104,8 @@ func (r *FilesystemBackendReconciler) reconcileNormal(ctx context.Context, backe
 		return ctrl.Result{}, err
 	}
 
-	// Requeue for periodic health checks
-	return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
+	// Don't requeue - only reconcile on spec changes
+	return ctrl.Result{}, nil
 }
 
 // reconcileDelete handles deletion of the backend

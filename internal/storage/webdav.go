@@ -201,3 +201,9 @@ func (fi *webdavFileInfo) IsDir() bool        { return fi.isDir }
 func (fi *webdavFileInfo) Owner() string      { return "" }
 func (fi *webdavFileInfo) Group() string      { return "" }
 func (fi *webdavFileInfo) Sys() interface{}   { return nil }
+
+// Close cleans up resources
+func (s *webdavStorage) Close() error {
+	// WebDAV client does not require explicit closing
+	return nil
+}

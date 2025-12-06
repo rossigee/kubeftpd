@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -53,7 +54,12 @@ func newMinioBackendImpl(backend *ftpv1.MinioBackend, kubeClient client.Client) 
 		// TODO: Add CA certificate support if backend.Spec.TLS.CACert is provided
 
 		transport = &http.Transport{
-			TLSClientConfig: tlsConfig,
+			TLSClientConfig:       tlsConfig,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
+			MaxIdleConns:          10,
+			MaxIdleConnsPerHost:   5,
 		}
 	}
 

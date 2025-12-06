@@ -24,6 +24,7 @@ type Storage interface {
 	MakeDir(path string) error
 	GetFile(path string, offset int64) (int64, io.ReadCloser, error)
 	PutFile(path string, reader io.Reader, offset int64) (int64, error)
+	Close() error
 }
 
 // countingReader counts bytes read from the underlying reader

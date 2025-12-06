@@ -87,6 +87,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// Create auth instance
 	auth := NewKubeAuth(s.client)
 
+	// Start user cache refresh every 5 minutes
+	auth.StartCacheRefresh(ctx, 5*time.Minute)
+
 	// Create FTP server configuration
 	driver := &KubeDriver{
 		client: s.client,
@@ -713,10 +716,16 @@ func (driver *KubeDriver) getBackendType() string {
 }
 
 // Close handles connection cleanup and metrics recording
+// Close handles connection cleanup and metrics recording
 func (driver *KubeDriver) Close() error {
 	// Clean up session mapping to prevent memory leaks
 	if driver.auth != nil && driver.sessionID != "" {
 		driver.auth.ClearSessionUser(driver.sessionID)
+	}
+
+	// Close storage implementation to free resources
+	if driver.storageImpl != nil {
+		_ = driver.storageImpl.Close()
 	}
 
 	if driver.authenticatedUser != "" && !driver.sessionStart.IsZero() {

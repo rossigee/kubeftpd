@@ -98,7 +98,8 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	})
 
 	log.Info("User reconciliation completed", "user", user.Name)
-	return ctrl.Result{RequeueAfter: time.Minute * 10}, nil
+	// Don't requeue - only reconcile on spec changes
+	return ctrl.Result{}, nil
 }
 
 // validateUser validates the user configuration and backend references

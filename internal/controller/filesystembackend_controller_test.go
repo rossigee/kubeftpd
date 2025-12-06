@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,7 +75,7 @@ func TestFilesystemBackendReconciler_ReconcileNormal(t *testing.T) {
 	// Perform reconciliation
 	result, err := reconciler.Reconcile(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, time.Minute*5, result.RequeueAfter)
+	assert.Equal(t, ctrl.Result{}, result)
 
 	// Check that status was updated
 	var updatedBackend ftpv1.FilesystemBackend
@@ -147,7 +146,7 @@ func TestFilesystemBackendReconciler_ReconcileWithPVC(t *testing.T) {
 	// Perform reconciliation
 	result, err := reconciler.Reconcile(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, time.Minute*5, result.RequeueAfter)
+	assert.Equal(t, ctrl.Result{}, result)
 
 	// Check that status was updated
 	var updatedBackend ftpv1.FilesystemBackend
@@ -197,7 +196,7 @@ func TestFilesystemBackendReconciler_ReconcileInvalidPath(t *testing.T) {
 	// Perform reconciliation
 	result, err := reconciler.Reconcile(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, time.Minute*5, result.RequeueAfter)
+	assert.Equal(t, ctrl.Result{}, result)
 
 	// Check that status shows not ready
 	var updatedBackend ftpv1.FilesystemBackend
@@ -248,7 +247,7 @@ func TestFilesystemBackendReconciler_ReconcileReadOnlyMode(t *testing.T) {
 	// Perform reconciliation
 	result, err := reconciler.Reconcile(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, time.Minute*5, result.RequeueAfter)
+	assert.Equal(t, ctrl.Result{}, result)
 
 	// Check that status shows ready (read-only mode should still be valid)
 	var updatedBackend ftpv1.FilesystemBackend
@@ -318,7 +317,7 @@ func TestFilesystemBackendReconciler_ReconcileWithNotBoundPVC(t *testing.T) {
 	// Perform reconciliation
 	result, err := reconciler.Reconcile(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, time.Minute*5, result.RequeueAfter)
+	assert.Equal(t, ctrl.Result{}, result)
 
 	// Check that status shows not ready due to unbound PVC
 	var updatedBackend ftpv1.FilesystemBackend
@@ -372,7 +371,7 @@ func TestFilesystemBackendReconciler_ReconcileWithMissingPVC(t *testing.T) {
 	// Perform reconciliation
 	result, err := reconciler.Reconcile(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, time.Minute*5, result.RequeueAfter)
+	assert.Equal(t, ctrl.Result{}, result)
 
 	// Check that status shows not ready due to missing PVC
 	var updatedBackend ftpv1.FilesystemBackend

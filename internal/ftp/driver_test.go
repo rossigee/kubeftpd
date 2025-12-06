@@ -68,6 +68,12 @@ func (m *MockStorage) PutFile(path string, reader io.Reader, offset int64) (int6
 }
 
 // MockFileInfo for testing
+
+func (m *MockStorage) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 type MockFileInfo struct {
 	name  string
 	size  int64
