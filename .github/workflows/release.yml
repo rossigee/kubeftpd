@@ -7,7 +7,7 @@ name: Release
       - 'v*'
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.25.5'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
