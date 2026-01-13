@@ -43,6 +43,10 @@ jobs:
         run: |
           curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
           chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          # Install envtest binaries
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          mkdir -p /usr/local/kubebuilder/bin
+          setup-envtest use $(go list -m sigs.k8s.io/controller-runtime | cut -d' ' -f2 | cut -d'.' -f1-2) --bin-dir /usr/local/kubebuilder/bin
 
       - name: Build
         run: |
@@ -167,6 +171,10 @@ jobs:
         run: |
           curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
           chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          # Install envtest binaries
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          mkdir -p /usr/local/kubebuilder/bin
+          setup-envtest use $(go list -m sigs.k8s.io/controller-runtime | cut -d' ' -f2 | cut -d'.' -f1-2) --bin-dir /usr/local/kubebuilder/bin
 
       - name: Build binaries
         run: |
