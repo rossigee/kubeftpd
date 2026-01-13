@@ -46,7 +46,7 @@ jobs:
           # Install envtest binaries
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           mkdir -p /usr/local/kubebuilder/bin
-          setup-envtest use $(go list -m sigs.k8s.io/controller-runtime | cut -d' ' -f2 | cut -d'.' -f1-2) --bin-dir /usr/local/kubebuilder/bin
+          setup-envtest use 1.22 --bin-dir /usr/local/kubebuilder/bin
 
       - name: Build
         run: |
@@ -174,7 +174,7 @@ jobs:
           # Install envtest binaries
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           mkdir -p /usr/local/kubebuilder/bin
-          setup-envtest use $(go list -m sigs.k8s.io/controller-runtime | cut -d' ' -f2 | cut -d'.' -f1-2) --bin-dir /usr/local/kubebuilder/bin
+          setup-envtest use 1.22 --bin-dir /usr/local/kubebuilder/bin
 
       - name: Build binaries
         run: |
