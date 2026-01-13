@@ -45,16 +45,17 @@ jobs:
           chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
           # Install envtest binaries
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          sudo mkdir -p /usr/local/kubebuilder/bin/k8s/1.34
-          setup-envtest use 1.34 --bin-dir /usr/local/kubebuilder/bin
+          mkdir -p ${HOME}/bin/k8s
+          setup-envtest use 1.34 --bin-dir ${HOME}/bin
 
       - name: Build
         run: |
           make manifests generate fmt vet
 
       - name: Test
-        run: |
-          make test
+         run: |
+           export KUBEBUILDER_ASSETS=$(setup-envtest use 1.34 --bin-dir ${HOME}/bin -p path)
+           make test
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5
@@ -173,8 +174,8 @@ jobs:
           chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
           # Install envtest binaries
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          sudo mkdir -p /usr/local/kubebuilder/bin/k8s/1.34
-          setup-envtest use 1.34 --bin-dir /usr/local/kubebuilder/bin
+          mkdir -p ${HOME}/bin/k8s
+          setup-envtest use 1.34 --bin-dir ${HOME}/bin
 
       - name: Build binaries
         run: |
