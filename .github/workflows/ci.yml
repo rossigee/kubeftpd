@@ -44,7 +44,7 @@ jobs:
         run: |
           make manifests generate fmt vet
 
-       - name: Test
+      - name: Test
          run: |
            go test ./internal/ftp ./internal/storage ./cmd -v -cover
 
