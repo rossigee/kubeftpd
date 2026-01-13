@@ -39,10 +39,6 @@ jobs:
             ${{ runner.os }}-go-${{ env.GO_VERSION }}-
             ${{ runner.os }}-go-
 
-      - name: Install kubebuilder
-        run: |
-          curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
-          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 # Skip kubebuilder installation - running unit tests only
 
       - name: Build
@@ -164,10 +160,6 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install kubebuilder
-        run: |
-          curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
-          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
 # Skip kubebuilder installation - running unit tests only
 
       - name: Build binaries
