@@ -45,8 +45,8 @@ jobs:
           make manifests generate fmt vet
 
       - name: Test
-         run: |
-           go test ./internal/ftp ./internal/storage ./cmd -v -cover
+        run: |
+          go test ./internal/ftp ./internal/storage ./cmd -v -cover
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5
