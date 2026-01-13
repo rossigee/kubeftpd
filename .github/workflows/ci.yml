@@ -45,7 +45,7 @@ jobs:
           chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
           # Install envtest binaries
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          mkdir -p /usr/local/kubebuilder/bin
+          sudo mkdir -p /usr/local/kubebuilder/bin
           setup-envtest use 1.22 --bin-dir /usr/local/kubebuilder/bin
 
       - name: Build
@@ -173,7 +173,7 @@ jobs:
           chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
           # Install envtest binaries
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          mkdir -p /usr/local/kubebuilder/bin
+          sudo mkdir -p /usr/local/kubebuilder/bin
           setup-envtest use 1.22 --bin-dir /usr/local/kubebuilder/bin
 
       - name: Build binaries
