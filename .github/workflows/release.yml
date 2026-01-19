@@ -111,6 +111,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Package and push Helm chart to OCI
+        run: |
+          # Package the Helm chart
+          helm package chart/kubeftpd -d dist
+
+          # Login to OCI registry
+          echo "${{ secrets.PAT_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+          # Push chart to OCI registry
+          helm push dist/kubeftpd-*.tgz oci://${{ env.REGISTRY }}/$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')/charts
+
+          # Logout
+          helm registry logout ${{ env.REGISTRY }}
+
       - name: Generate changelog
         run: |
           if git describe --tags --abbrev=0 HEAD~1 >/dev/null 2>&1; then
@@ -131,4 +150,5 @@ jobs:
           files: |
             dist/crds.yaml
             dist/kubeftpd.yaml
+            dist/kubeftpd-*.tgz
             dist/binaries/*
