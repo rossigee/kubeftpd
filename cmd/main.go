@@ -76,6 +76,7 @@ type appConfig struct {
 	webhookCertKey    string
 	secureMetrics     bool
 	enableHTTP2       bool
+	ftpBindAddress    string
 	ftpPort           int
 	ftpPasvPorts      string
 	ftpPublicIP       string
@@ -119,6 +120,9 @@ func parseFlags() (*appConfig, zap.Options) {
 	flag.StringVar(&config.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&config.enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&config.ftpBindAddress, "ftp-bind-address", "",
+		"The IP address the FTP server binds to (empty = all interfaces). "+
+			"Examples: 0.0.0.0 (IPv4), :: (IPv6), 127.0.0.1 (localhost)")
 	flag.IntVar(&config.ftpPort, "ftp-port", getDefaultFTPPort(), "The port on which the FTP server listens")
 	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "10000-10020", "The range of ports for FTP passive mode")
 	flag.StringVar(&config.ftpPublicIP, "ftp-public-ip", "", "The public IP address for FTP passive mode (PASV) responses")
@@ -147,6 +151,10 @@ func parseFlags() (*appConfig, zap.Options) {
 }
 
 func processEnvironmentOverrides(config *appConfig) {
+	if envFtpBindAddress := os.Getenv("FTP_BIND_ADDRESS"); envFtpBindAddress != "" {
+		config.ftpBindAddress = envFtpBindAddress
+	}
+
 	if envFtpPort := os.Getenv("FTP_PORT"); envFtpPort != "" {
 		if port, err := strconv.Atoi(envFtpPort); err == nil {
 			config.ftpPort = port
@@ -172,6 +180,10 @@ func processEnvironmentOverrides(config *appConfig) {
 
 	if envFtpPublicIP := os.Getenv("FTP_PUBLIC_IP"); envFtpPublicIP != "" {
 		config.ftpPublicIP = envFtpPublicIP
+	}
+
+	if envHTTPBindAddress := os.Getenv("HTTP_BIND_ADDRESS"); envHTTPBindAddress != "" {
+		config.metricsAddr = envHTTPBindAddress
 	}
 
 	if envEnableProfiling := os.Getenv("ENABLE_PROFILING"); envEnableProfiling != "" {
@@ -434,7 +446,7 @@ func main() {
 	}
 
 	// Start FTP server
-	ftpServer := ftp.NewServer(config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, mgr.GetClient())
+	ftpServer := ftp.NewServer(config.ftpBindAddress, config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, mgr.GetClient())
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 

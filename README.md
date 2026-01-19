@@ -460,15 +460,51 @@ spec:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `FTP_BIND_ADDRESS` | FTP server bind address (empty = all interfaces) | `""` |
 | `FTP_PORT` | FTP server port | `21` (root), `2121` (non-root) |
-| `FTP_PASSIVE_PORT_MIN` | Minimum passive port range | `30000` |
-| `FTP_PASSIVE_PORT_MAX` | Maximum passive port range | `30100` |
+| `FTP_PASSIVE_PORTS` | FTP passive mode port range | `10000-10020` |
+| `FTP_PASSIVE_PORT_MIN` | Minimum passive port range (alternative) | `30000` |
+| `FTP_PASSIVE_PORT_MAX` | Maximum passive port range (alternative) | `30100` |
+| `FTP_PUBLIC_IP` | Public IP for FTP PASV responses | `""` |
 | `FTP_WELCOME_MESSAGE` | FTP welcome message | `"Welcome to KubeFTPd"` |
 | `FTP_IDLE_TIMEOUT` | FTP connection idle timeout (seconds) | `300` |
 | `FTP_MAX_CONNECTIONS` | Maximum concurrent FTP connections | `100` |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
 | `LOG_FORMAT` | Log format (json, text) | `json` |
-| `HTTP_PORT` | HTTP server port (metrics, health, status) | `8080` |
+| `HTTP_BIND_ADDRESS` | HTTP server bind address (with port, e.g., `:8080`) | `:8080` |
+| `ENABLE_PROFILING` | Enable Go profiling endpoints | `false` |
+
+#### Configuration Examples
+
+**FTP Bind Address Examples:**
+```bash
+# Bind to all interfaces (default)
+./kubeftpd --ftp-port=21
+
+# Bind to specific IP (CLI flag)
+./kubeftpd --ftp-bind-address=192.168.1.10 --ftp-port=21
+
+# Bind to localhost only (environment variable)
+FTP_BIND_ADDRESS=127.0.0.1 FTP_PORT=2121 ./kubeftpd
+
+# Bind to IPv6 all interfaces
+FTP_BIND_ADDRESS=:: FTP_PORT=2121 ./kubeftpd
+```
+
+**HTTP Bind Address Examples:**
+```bash
+# Default (all interfaces on port 8080)
+./kubeftpd
+
+# Specific IP and port (CLI flag - uses default --http-bind-address flag)
+./kubeftpd --http-bind-address=127.0.0.1:8080
+
+# Specific IP and port (environment variable)
+HTTP_BIND_ADDRESS=192.168.1.10:8080 ./kubeftpd
+
+# HTTPS on all interfaces
+./kubeftpd --http-bind-address=:8443 --metrics-secure
+```
 
 ### Built-in User Configuration
 

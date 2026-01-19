@@ -60,6 +60,7 @@ func isTracingEnabled() bool {
 
 // Server represents the KubeFTPd server
 type Server struct {
+	BindAddress    string
 	Port           int
 	PasvPorts      string
 	PublicIP       string
@@ -69,8 +70,9 @@ type Server struct {
 }
 
 // NewServer creates a new FTP server instance
-func NewServer(port int, pasvPorts string, publicIP string, welcomeMessage string, kubeClient client.Client) *Server {
+func NewServer(bindAddress string, port int, pasvPorts string, publicIP string, welcomeMessage string, kubeClient client.Client) *Server {
 	return &Server{
+		BindAddress:    bindAddress,
 		Port:           port,
 		PasvPorts:      pasvPorts,
 		PublicIP:       publicIP,
@@ -82,7 +84,7 @@ func NewServer(port int, pasvPorts string, publicIP string, welcomeMessage strin
 // Start initializes and starts the FTP server
 func (s *Server) Start(ctx context.Context) error {
 	logger := getLogger()
-	logger.Info("Starting KubeFTPd server", "port", s.Port, "pasv-ports", s.PasvPorts)
+	logger.Info("Starting KubeFTPd server", "bind-address", s.BindAddress, "port", s.Port, "pasv-ports", s.PasvPorts)
 
 	// Create auth instance
 	auth := NewKubeAuth(s.client)
@@ -115,7 +117,8 @@ func (s *Server) Start(ctx context.Context) error {
 	s.server = ftpServer
 
 	// Start the server
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
+	bindAddr := fmt.Sprintf("%s:%d", s.BindAddress, s.Port)
+	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
 		return fmt.Errorf("failed to create listener: %w", err)
 	}
@@ -126,7 +129,7 @@ func (s *Server) Start(ctx context.Context) error {
 		_ = listener.Close()
 	}()
 
-	logger.Info("FTP server listening", "port", s.Port)
+	logger.Info("FTP server listening", "address", bindAddr)
 	return ftpServer.Serve(listener)
 }
 
