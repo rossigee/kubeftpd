@@ -51,7 +51,7 @@ import (
 
 var (
 	// Version information - set during build
-	version = "v0.6.13"
+	version = "v0.6.14"
 	commit  = "unknown"
 	date    = "unknown"
 

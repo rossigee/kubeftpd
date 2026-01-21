@@ -81,9 +81,23 @@ func NewServer(bindAddress string, port int, pasvPorts string, publicIP string, 
 	}
 }
 
-// Start initializes and starts the FTP server
+// Start initializes and starts the FTP server using a custom listener.
+// The server.Options.Port is intentionally set to 0 because we manage
+// the TCP listener directly below. This allows us to:
+// - Bind to a specific address (s.BindAddress)
+// - Have full control over listener lifecycle
+// - Support graceful shutdown via context
 func (s *Server) Start(ctx context.Context) error {
 	logger := getLogger()
+
+	// Validate configuration before starting
+	if s.Port < 0 || s.Port > 65535 {
+		return fmt.Errorf("invalid port: %d (must be 0-65535)", s.Port)
+	}
+	if s.BindAddress == "" {
+		return fmt.Errorf("bind address cannot be empty")
+	}
+
 	logger.Info("Starting KubeFTPd server", "bind-address", s.BindAddress, "port", s.Port, "pasv-ports", s.PasvPorts)
 
 	// Create auth instance
@@ -100,7 +114,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	opts := &server.Options{
 		Driver:         driver,
-		Port:           s.Port,
+		Port:           0, // Don't set port when using custom listener
 		Hostname:       "",
 		PublicIP:       s.PublicIP,
 		Auth:           auth,
@@ -116,20 +130,26 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.server = ftpServer
 
-	// Start the server
+	// Start the server with custom listener
 	bindAddr := fmt.Sprintf("%s:%d", s.BindAddress, s.Port)
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
-		return fmt.Errorf("failed to create listener: %w", err)
+		return fmt.Errorf("failed to create listener on %s: %w", bindAddr, err)
 	}
-
-	go func() {
-		<-ctx.Done()
-		logger.Info("Shutting down FTP server")
+	defer func() {
 		_ = listener.Close()
 	}()
 
-	logger.Info("FTP server listening", "address", bindAddr)
+	// Handle graceful shutdown
+	go func() {
+		<-ctx.Done()
+		logger.Info("Shutting down FTP server", "address", bindAddr)
+		if err := listener.Close(); err != nil {
+			logger.Error(err, "Error closing FTP listener", "address", bindAddr)
+		}
+	}()
+
+	logger.Info("FTP server listening", "address", bindAddr, "passive_ports", s.PasvPorts)
 	return ftpServer.Serve(listener)
 }
 

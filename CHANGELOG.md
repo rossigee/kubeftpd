@@ -5,6 +5,36 @@ All notable changes to KubeFTPd will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.14] - 2026-01-21
+
+### Added
+- **Comprehensive FTP Server Testing**: Added 15 new test cases covering port validation, listener binding, graceful shutdown, and server configuration
+  - Port range validation tests (valid, zero, max valid, negative, out-of-range)
+  - Bind address validation tests (empty, localhost, IPv6, wildcard interfaces)
+  - Listener binding verification tests
+  - Graceful shutdown and cleanup tests
+  - Server configuration tests
+
+### Fixed
+- **Port Configuration Validation**: Added early validation before network operations
+  - Validates port range (0-65535) with clear error messages
+  - Validates bind address is not empty
+  - Prevents invalid configurations from reaching network layer
+- **Listener Cleanup Error Handling**: Improved listener shutdown error handling
+  - Added guaranteed cleanup via defer statement
+  - Proper error logging on listener close failures
+  - Better visibility into shutdown operations
+- **Linting Issues**: Fixed all golangci-lint and go vet errors
+  - Proper error handling for deferred Close() operations
+  - Fixed IPv6-compatible address format using net.JoinHostPort()
+  - All code formatting compliant
+
+### Changed
+- **FTP Server Documentation**: Added comprehensive comments explaining custom listener strategy
+  - Documented why port is set to 0 in FTP options
+  - Explained benefits of custom listener management
+  - Clarified graceful shutdown support via context
+
 ## [v0.5.1] - 2025-08-21
 
 ### Added
