@@ -5,8 +5,8 @@ go 1.25.6
 require (
 	github.com/go-logr/logr v1.4.3
 	github.com/minio/minio-go/v7 v7.0.98
-	github.com/onsi/ginkgo/v2 v2.27.5
-	github.com/onsi/gomega v1.39.0
+	github.com/onsi/ginkgo/v2 v2.28.0
+	github.com/onsi/gomega v1.39.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/secsy/goftp v0.0.0-20200609142545-aa2de14babf4
 	github.com/stretchr/testify v1.11.1
