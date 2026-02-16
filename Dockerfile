@@ -1,5 +1,5 @@
 # Build the kubeftpd binary
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=v0.6.10
