@@ -1,7 +1,7 @@
 # Development Dockerfile for KubeFTPd
 # This Dockerfile is optimized for development with live reloading
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 FROM golang:${GO_VERSION}-alpine AS development
 
 # Install development tools
@@ -22,7 +22,7 @@ RUN go install github.com/cosmtrek/air@latest
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Install golangci-lint
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.9.0
 
 # Install gosec
 RUN go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest

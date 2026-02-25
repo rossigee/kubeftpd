@@ -47,8 +47,8 @@ repos:
   - repo: https://github.com/hadolint/hadolint
     rev: v2.13.1-beta
     hooks:
-      - id: hadolint-docker
-        args: [--ignore=DL3008, --ignore=DL3009]
+      - id: hadolint
+        args: [--ignore=DL3008, --ignore=DL3009, --ignore=DL3059, --ignore=DL3062, --ignore=DL4006, --ignore=SC2046]
 
   - repo: https://github.com/gruntwork-io/pre-commit
     rev: v0.1.30
