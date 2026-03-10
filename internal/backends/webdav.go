@@ -1,6 +1,7 @@
 package backends
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -32,7 +34,7 @@ func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client
 	// If useSecret is specified, read from Kubernetes Secret
 	if backend.Spec.Credentials.UseSecret != nil {
 		var err error
-		username, password, err = getWebDavCredentialsFromSecret(backend.Spec.Credentials.UseSecret, kubeClient)
+		username, password, err = getWebDavCredentialsFromSecret(backend.Spec.Credentials.UseSecret, backend.Namespace, kubeClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get credentials from secret: %w", err)
 		}
@@ -85,11 +87,45 @@ func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client
 }
 
 // getWebDavCredentialsFromSecret retrieves WebDAV credentials from a Kubernetes Secret
-func getWebDavCredentialsFromSecret(secretRef *ftpv1.WebDavSecretRef, kubeClient client.Client) (string, string, error) {
-	// TODO: Implement reading from Kubernetes Secret
-	// For now, return empty strings - this would need to be implemented
-	// based on your specific Secret structure
-	return "", "", fmt.Errorf("reading credentials from secrets not implemented yet")
+func getWebDavCredentialsFromSecret(secretRef *ftpv1.WebDavSecretRef, backendNamespace string, kubeClient client.Client) (string, string, error) {
+	if secretRef == nil {
+		return "", "", fmt.Errorf("secret reference is nil")
+	}
+
+	secretNamespace := backendNamespace
+	if secretRef.Namespace != nil && *secretRef.Namespace != "" {
+		secretNamespace = *secretRef.Namespace
+	}
+
+	secret := &corev1.Secret{}
+	err := kubeClient.Get(context.TODO(), client.ObjectKey{
+		Name:      secretRef.Name,
+		Namespace: secretNamespace,
+	}, secret)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretRef.Name, err)
+	}
+
+	usernameKey := secretRef.UsernameKey
+	if usernameKey == "" {
+		usernameKey = "username"
+	}
+	passwordKey := secretRef.PasswordKey
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+
+	username, exists := secret.Data[usernameKey]
+	if !exists {
+		return "", "", fmt.Errorf("username not found in secret with key %s", usernameKey)
+	}
+
+	password, exists := secret.Data[passwordKey]
+	if !exists {
+		return "", "", fmt.Errorf("password not found in secret with key %s", passwordKey)
+	}
+
+	return string(username), string(password), nil
 }
 
 // Stat returns file/directory information
