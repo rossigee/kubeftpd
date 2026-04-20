@@ -2,6 +2,7 @@ package ftp
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"sync"
 	"time"
@@ -159,7 +160,7 @@ func (auth *KubeAuth) checkRegularUserPassword(user *ftpv1.User, password string
 	if err != nil {
 		return false, err
 	}
-	return userPassword == password, nil
+	return subtle.ConstantTimeCompare([]byte(userPassword), []byte(password)) == 1, nil
 }
 
 // checkAdminPassword validates admin user passwords against Kubernetes Secret
@@ -173,7 +174,7 @@ func (auth *KubeAuth) checkAdminPassword(user *ftpv1.User, password string) (boo
 		return false, err
 	}
 
-	return userPassword == password, nil
+	return subtle.ConstantTimeCompare([]byte(userPassword), []byte(password)) == 1, nil
 }
 
 // GetUser returns a user from cache or loads from Kubernetes

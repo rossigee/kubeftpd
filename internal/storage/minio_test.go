@@ -139,6 +139,9 @@ func TestMinioStorage_ListDir(t *testing.T) {
 		Spec: ftpv1.UserSpec{
 			Username:      "testuser",
 			HomeDirectory: "/home/testuser",
+			Permissions: ftpv1.UserPermissions{
+				List: true,
+			},
 		},
 	}
 

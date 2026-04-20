@@ -59,6 +59,10 @@ func (s *webdavStorage) Stat(filePath string) (os.FileInfo, error) {
 
 // ListDir lists directory contents
 func (s *webdavStorage) ListDir(dirPath string, callback func(os.FileInfo) error) error {
+	if !s.user.Spec.Permissions.List {
+		return fmt.Errorf("list permission denied")
+	}
+
 	fullPath := s.resolvePath(dirPath)
 
 	entries, err := s.backend.ReadDir(fullPath)

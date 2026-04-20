@@ -261,6 +261,7 @@ func (r *BuiltInUserManager) createAdminUserSpec(name string) *ftpv1.User {
 			Type:          "admin",
 			Username:      "admin",
 			HomeDirectory: r.Config.AdminHomeDir,
+			Chroot:        true,
 			Enabled:       true,
 			PasswordSecret: &ftpv1.UserSecretRef{
 				Name: r.Config.AdminPasswordSecret,

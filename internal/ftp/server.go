@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -103,8 +104,13 @@ func (s *Server) Start(ctx context.Context) error {
 	// Create auth instance
 	auth := NewKubeAuth(s.client)
 
-	// Start user cache refresh every 5 minutes
-	auth.StartCacheRefresh(ctx, 5*time.Minute)
+	// Start user cache refresh every 5 minutes in a tracked goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		auth.StartCacheRefresh(ctx, 5*time.Minute)
+	}()
 
 	// Create FTP server configuration
 	driver := &KubeDriver{
@@ -147,6 +153,7 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := listener.Close(); err != nil {
 			logger.Error(err, "Error closing FTP listener", "address", bindAddr)
 		}
+		wg.Wait()
 	}()
 
 	logger.Info("FTP server listening", "address", bindAddr, "passive_ports", s.PasvPorts)

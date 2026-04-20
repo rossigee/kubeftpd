@@ -20,13 +20,13 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
-	"os"
-	"path/filepath"
-	"strconv"
-
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -94,6 +94,7 @@ type appConfig struct {
 	adminBackendName    string
 	// Profiling settings
 	enableProfiling bool
+	profilingAddr   string
 }
 
 func getDefaultFTPPort() int {
@@ -142,6 +143,7 @@ func parseFlags() (*appConfig, zap.Options) {
 
 	// Profiling flags
 	flag.BoolVar(&config.enableProfiling, "enable-profiling", false, "Enable Go profiling endpoints (/debug/pprof/)")
+	flag.StringVar(&config.profilingAddr, "profiling-addr", "127.0.0.1:6060", "Address for pprof endpoints (loopback only recommended)")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -249,23 +251,40 @@ func setupWebhookServer(config *appConfig, tlsOpts []func(*tls.Config)) (webhook
 	return webhookServer, webhookCertWatcher, nil
 }
 
-func createHTTPHandler(enableProfiling bool) *http.ServeMux {
+func createHTTPHandler() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"service":"kubeftpd","version":"%s","commit":"%s","date":"%s","status":"running"}`+"\n", version, commit, date)
 	})
-
-	// Add pprof handlers if profiling is enabled
-	if enableProfiling {
-		mux.HandleFunc("/debug/pprof/", pprof.Index)
-		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	}
-
 	return mux
+}
+
+// startProfilingServer starts a pprof server on a dedicated loopback address.
+// It must not be exposed on a shared or public-facing port.
+func startProfilingServer(ctx context.Context, addr string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() {
+		setupLog.Info("Starting profiling server", "address", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			setupLog.Error(err, "Profiling server error")
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
 }
 
 func setupMetricsServer(config *appConfig, tlsOpts []func(*tls.Config), mux *http.ServeMux) (metricsserver.Options, *certwatcher.CertWatcher, error) {
@@ -296,9 +315,10 @@ func setupMetricsServer(config *appConfig, tlsOpts []func(*tls.Config), mux *htt
 
 func setupControllers(mgr ctrl.Manager, config *appConfig) error {
 	// Get the operator namespace for built-in user creation
-	operatorNamespace := "default"
-	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
-		operatorNamespace = ns
+	operatorNamespace := os.Getenv("POD_NAMESPACE")
+	if operatorNamespace == "" {
+		setupLog.Info("WARNING: POD_NAMESPACE not set; built-in users will be created in 'default' namespace")
+		operatorNamespace = "default"
 	}
 
 	// Create built-in user manager configuration
@@ -378,7 +398,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mux := createHTTPHandler(config.enableProfiling)
+	mux := createHTTPHandler()
 	metricsServerOptions, metricsCertWatcher, err := setupMetricsServer(config, tlsOpts, mux)
 	if err != nil {
 		setupLog.Error(err, "Failed to setup metrics server")
@@ -413,9 +433,9 @@ func main() {
 	// Trigger initial built-in user reconciliation
 	// This will create/update/delete built-in User CRs based on configuration
 	ctx := context.Background()
-	operatorNamespace := "default"
-	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
-		operatorNamespace = ns
+	operatorNamespace := os.Getenv("POD_NAMESPACE")
+	if operatorNamespace == "" {
+		operatorNamespace = "default"
 	}
 
 	builtInConfig := controller.BuiltInUserConfig{
@@ -449,6 +469,10 @@ func main() {
 	ftpServer := ftp.NewServer(config.ftpBindAddress, config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, mgr.GetClient())
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
+
+	if config.enableProfiling {
+		startProfilingServer(ctx, config.profilingAddr)
+	}
 
 	// Channel to receive FTP server errors
 	ftpErrorChan := make(chan error, 1)

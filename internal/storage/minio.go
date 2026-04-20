@@ -92,6 +92,10 @@ func (s *minioStorage) Stat(filePath string) (os.FileInfo, error) {
 
 // ListDir lists directory contents
 func (s *minioStorage) ListDir(dirPath string, callback func(os.FileInfo) error) error {
+	if !s.user.Spec.Permissions.List {
+		return fmt.Errorf("list permission denied")
+	}
+
 	fullPath := s.resolvePath(dirPath)
 
 	objects, err := s.backend.ListObjects(fullPath, false)
