@@ -87,9 +87,15 @@ type WebDavTLSConfig struct {
 	// +kubebuilder:default=false
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 
-	// CACert is the CA certificate for verifying the WebDAV server
+	// CACert is an inline PEM-encoded CA certificate bundle for verifying the WebDAV server.
+	// Use CASecretRef instead when the CA needs to be rotated or kept out of the CRD spec.
 	// +optional
 	CACert string `json:"caCert,omitempty"`
+
+	// CASecretRef references a Kubernetes Secret containing the PEM-encoded CA bundle.
+	// Takes precedence over CACert when both are set.
+	// +optional
+	CASecretRef *TLSCASecretRef `json:"caSecretRef,omitempty"`
 }
 
 // WebDavBackendStatus defines the observed state of WebDavBackend.

@@ -88,9 +88,30 @@ spec:
                 description: TLS configuration for WebDAV connection
                 properties:
                   caCert:
-                    description: CACert is the CA certificate for verifying the WebDAV
-                      server
+                    description: |-
+                      CACert is an inline PEM-encoded CA certificate bundle for verifying the WebDAV server.
+                      Use CASecretRef instead when the CA needs to be rotated or kept out of the CRD spec.
                     type: string
+                  caSecretRef:
+                    description: |-
+                      CASecretRef references a Kubernetes Secret containing the PEM-encoded CA bundle.
+                      Takes precedence over CACert when both are set.
+                    properties:
+                      key:
+                        default: ca.crt
+                        description: Key is the key in the secret containing the PEM-encoded
+                          CA bundle
+                        type: string
+                      name:
+                        description: Name of the secret
+                        type: string
+                      namespace:
+                        description: Namespace of the secret (defaults to same namespace
+                          as the backend resource)
+                        type: string
+                    required:
+                    - name
+                    type: object
                   enabled:
                     default: true
                     description: Enabled controls whether to use TLS

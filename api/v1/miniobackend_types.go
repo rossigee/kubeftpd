@@ -86,6 +86,21 @@ type MinioSecretRef struct {
 	SecretAccessKeyKey string `json:"secretAccessKeyKey,omitempty"`
 }
 
+// TLSCASecretRef references a Kubernetes Secret containing a CA certificate bundle
+type TLSCASecretRef struct {
+	// Name of the secret
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the secret (defaults to same namespace as the backend resource)
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// Key is the key in the secret containing the PEM-encoded CA bundle
+	// +kubebuilder:default="ca.crt"
+	Key string `json:"key,omitempty"`
+}
+
 // MinioTLSConfig defines TLS settings for MinIO connection
 type MinioTLSConfig struct {
 	// Enabled controls whether to use TLS
@@ -96,9 +111,15 @@ type MinioTLSConfig struct {
 	// +kubebuilder:default=false
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 
-	// CACert is the CA certificate for verifying the MinIO server
+	// CACert is an inline PEM-encoded CA certificate bundle for verifying the MinIO server.
+	// Use CASecretRef instead when the CA needs to be rotated or kept out of the CRD spec.
 	// +optional
 	CACert string `json:"caCert,omitempty"`
+
+	// CASecretRef references a Kubernetes Secret containing the PEM-encoded CA bundle.
+	// Takes precedence over CACert when both are set.
+	// +optional
+	CASecretRef *TLSCASecretRef `json:"caSecretRef,omitempty"`
 }
 
 // MinioBackendStatus defines the observed state of MinioBackend.
