@@ -52,7 +52,7 @@ Pre-built container images are available from GitHub Container Registry:
 ghcr.io/rossigee/kubeftpd:latest
 
 # Specific version
-ghcr.io/rossigee/kubeftpd:v0.6.14
+ghcr.io/rossigee/kubeftpd:v0.7.0
 ```
 
 **Supported architectures:**
@@ -710,7 +710,7 @@ kubectl apply -f https://github.com/rossigee/kubeftpd/releases/latest/download/c
 ```bash
 helm repo add kubeftpd https://rossigee.github.io/kubeftpd
 helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system \
-  --set controller.image.tag=v0.6.14 \
+  --set controller.image.tag=v0.7.0 \
   --set webhook.enabled=true \
   --set ftp.service.port=2121  # Example: override default port
 ```
