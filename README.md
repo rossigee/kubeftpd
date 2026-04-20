@@ -98,6 +98,16 @@ spec:
     secretAccessKey: "password123"
   tls:
     insecureSkipVerify: false
+    # Inline PEM CA bundle (takes effect when caSecretRef is absent):
+    # caCert: |
+    #   -----BEGIN CERTIFICATE-----
+    #   ...
+    #   -----END CERTIFICATE-----
+    # Or reference a Kubernetes Secret containing the CA bundle (takes precedence over caCert):
+    # caSecretRef:
+    #   name: minio-ca
+    #   namespace: certs   # optional; defaults to this resource's namespace
+    #   key: ca.crt        # optional; defaults to "ca.crt"
 ```
 
 For WebDAV:
@@ -115,6 +125,16 @@ spec:
     password: "password123"
   tls:
     insecureSkipVerify: false
+    # Inline PEM CA bundle (takes effect when caSecretRef is absent):
+    # caCert: |
+    #   -----BEGIN CERTIFICATE-----
+    #   ...
+    #   -----END CERTIFICATE-----
+    # Or reference a Kubernetes Secret containing the CA bundle (takes precedence over caCert):
+    # caSecretRef:
+    #   name: webdav-ca
+    #   namespace: certs   # optional; defaults to this resource's namespace
+    #   key: ca.crt        # optional; defaults to "ca.crt"
 ```
 
 For Filesystem:
@@ -378,7 +398,16 @@ spec:
       secretAccessKeyKey: "secret-key"  # optional, defaults to "secretAccessKey"
   tls:
     insecureSkipVerify: false
-    # caCert: "..."  # TODO: CA certificate support
+    # Option 1: inline PEM CA bundle
+    caCert: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+    # Option 2: reference a Kubernetes Secret (takes precedence over caCert)
+    caSecretRef:
+      name: minio-ca
+      namespace: certs  # optional; defaults to MinioBackend's namespace
+      key: ca.crt       # optional; defaults to "ca.crt"
 status:
   ready: true
   message: "Backend connection established"
@@ -407,7 +436,16 @@ spec:
       passwordKey: "password"
   tls:
     insecureSkipVerify: false
-    # caCert: "..."  # TODO: CA certificate support
+    # Option 1: inline PEM CA bundle
+    caCert: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+    # Option 2: reference a Kubernetes Secret (takes precedence over caCert)
+    caSecretRef:
+      name: webdav-ca
+      namespace: certs  # optional; defaults to WebDavBackend's namespace
+      key: ca.crt       # optional; defaults to "ca.crt"
 status:
   ready: true
   message: "Backend connection established"
