@@ -88,7 +88,7 @@ ftp:
   service:
     type: LoadBalancer
     port: 21  # Changed from 2121 to standard FTP port
-    bindAddr: "0.0.0.0"
+    bindAddress: "0.0.0.0"
     annotations: {}
     loadBalancerIP: ""
     loadBalancerSourceRanges: []
