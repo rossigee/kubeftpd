@@ -39,18 +39,22 @@ spec:
         args:
         - --http-bind-address=:{{ .Values.controller.http.service.port }}
         env:
+        - name: FTP_BIND_ADDRESS
+          value: {{ .Values.ftp.service.bindAddress | quote }}
         - name: FTP_PORT
           value: {{ .Values.ftp.service.port | quote }}
         - name: FTP_PASSIVE_PORT_MIN
-          value: {{ .Values.ftp.passive.service.portRange.min | quote }}
+          value: {{ .Values.ftp.service.passivePortRange.min | quote }}
         - name: FTP_PASSIVE_PORT_MAX
-          value: {{ .Values.ftp.passive.service.portRange.max | quote }}
+          value: {{ .Values.ftp.service.passivePortRange.max | quote }}
         - name: FTP_WELCOME_MESSAGE
           value: {{ .Values.ftp.settings.welcomeMessage | quote }}
         - name: FTP_IDLE_TIMEOUT
           value: {{ .Values.ftp.settings.idleTimeout | quote }}
         - name: FTP_MAX_CONNECTIONS
           value: {{ .Values.ftp.settings.maxConnections | quote }}
+        - name: POD_NAMESPACE
+          values: {{ .Release.Namespace }}
         {{- if .Values.controller.http.enabled }}
         - name: HTTP_PORT
           value: "8080"
