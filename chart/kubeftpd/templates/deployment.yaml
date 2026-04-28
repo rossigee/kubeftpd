@@ -54,7 +54,7 @@ spec:
         - name: FTP_MAX_CONNECTIONS
           value: {{ .Values.ftp.settings.maxConnections | quote }}
         - name: POD_NAMESPACE
-          values: {{ .Release.Namespace }}
+          value: {{ .Release.Namespace }}
         {{- if .Values.controller.http.enabled }}
         - name: HTTP_PORT
           value: "8080"
