@@ -1,0 +1,133 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: filesystembackends.ftp.golder.org
+spec:
+  group: ftp.golder.org
+  names:
+    kind: FilesystemBackend
+    listKind: FilesystemBackendList
+    plural: filesystembackends
+    singular: filesystembackend
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.basePath
+      name: Base Path
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .spec.readOnly
+      name: Read Only
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: FilesystemBackend is the Schema for the filesystembackends API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: FilesystemBackendSpec defines the desired state of FilesystemBackend
+            properties:
+              basePath:
+                description: |-
+                  BasePath is the base directory path where files will be stored
+                  This should typically be a mounted persistent volume
+                type: string
+              dirMode:
+                default: "0755"
+                description: DirMode specifies the default directory permissions for
+                  new directories
+                pattern: ^0[0-7]{3}$
+                type: string
+              fileMode:
+                default: "0644"
+                description: FileMode specifies the default file permissions for new
+                  files
+                pattern: ^0[0-7]{3}$
+                type: string
+              maxFileSize:
+                default: 0
+                description: |-
+                  MaxFileSize specifies the maximum allowed file size in bytes
+                  Set to 0 for no limit (default)
+                format: int64
+                type: integer
+              readOnly:
+                default: false
+                description: ReadOnly specifies if the filesystem should be mounted
+                  read-only
+                type: boolean
+              volumeClaimRef:
+                description: VolumeClaimRef references the PersistentVolumeClaim to
+                  use for storage
+                properties:
+                  name:
+                    description: Name is the name of the PersistentVolumeClaim
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace is the namespace of the PersistentVolumeClaim
+                      If not specified, uses the same namespace as the FilesystemBackend
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - basePath
+            type: object
+          status:
+            description: FilesystemBackendStatus defines the observed state of FilesystemBackend
+            properties:
+              availableSpace:
+                description: AvailableSpace shows the available space in bytes (if
+                  determinable)
+                format: int64
+                type: integer
+              lastChecked:
+                description: LastChecked is the timestamp of the last readiness check
+                format: date-time
+                type: string
+              message:
+                description: Message provides additional information about the backend
+                  status
+                type: string
+              ready:
+                description: Ready indicates if the filesystem backend is ready for
+                  use
+                type: boolean
+              totalSpace:
+                description: TotalSpace shows the total space in bytes (if determinable)
+                format: int64
+                type: integer
+            required:
+            - ready
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

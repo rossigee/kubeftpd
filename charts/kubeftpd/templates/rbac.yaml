@@ -1,0 +1,59 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-manager
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+rules:
+  # Custom resources
+  - apiGroups: [ftp.golder.org]
+    resources:
+      - filesystembackends
+      - miniobackends
+      - users
+      - webdavbackends
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [ftp.golder.org]
+    resources:
+      - filesystembackends/status
+      - miniobackends/status
+      - users/status
+      - webdavbackends/status
+    verbs: [get, update, patch]
+  - apiGroups: [ftp.golder.org]
+    resources:
+      - filesystembackends/finalizers
+      - miniobackends/finalizers
+      - users/finalizers
+      - webdavbackends/finalizers
+    verbs: [update]
+  # Core API — secrets (password lookup), events, PVCs
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, list, watch]
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-manager
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kubeftpd.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kubeftpd.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

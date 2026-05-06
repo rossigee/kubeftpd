@@ -9,7 +9,7 @@ spec:
   type: {{ .Values.ftp.service.type }}
   ports:
     - port: {{ .Values.ftp.service.port }}
-      targetPort: 21
+      targetPort: {{ .Values.ftp.service.port }}
       protocol: TCP
       name: ftp
   selector:

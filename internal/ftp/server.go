@@ -105,7 +105,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("invalid port: %d (must be 0-65535)", s.Port)
 	}
 	if s.BindAddress == "" {
-		return fmt.Errorf("bind address cannot be empty")
+		s.BindAddress = "0.0.0.0"
 	}
 
 	logger.Info("Starting KubeFTPd server", "bind-address", s.BindAddress, "port", s.Port, "pasv-ports", s.PasvPorts)

@@ -57,11 +57,10 @@ func TestServerPortValidation(t *testing.T) {
 			errorMsg:    "invalid port",
 		},
 		{
-			name:        "empty bind address",
+			name:        "empty bind address defaults to 0.0.0.0",
 			port:        2121,
 			bindAddress: "",
-			expectError: true,
-			errorMsg:    "bind address cannot be empty",
+			expectError: false,
 		},
 		{
 			name:        "localhost binding",
@@ -101,7 +100,7 @@ func TestServerPortValidation(t *testing.T) {
 				// (like port in use), not from our validation
 				if err != nil {
 					assert.NotContains(t, err.Error(), "invalid port")
-					assert.NotContains(t, err.Error(), "bind address cannot be empty")
+					assert.NotContains(t, err.Error(), "invalid port")
 				}
 			}
 		})
