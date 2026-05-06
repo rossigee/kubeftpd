@@ -239,8 +239,7 @@ func (driver *KubeDriver) Init(conn *server.Context) {
 	driver.sessionID = driver.auth.getSessionID(conn)
 	driver.sessionStart = time.Now()
 
-	// Extract client IP - use placeholder for now since RemoteAddr is not directly accessible
-	driver.clientIP = "unknown"
+	driver.clientIP = driver.auth.clientIPFromCtx(conn)
 
 	// Record connection metrics
 	username := driver.getAuthenticatedUsername()

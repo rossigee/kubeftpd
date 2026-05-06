@@ -58,12 +58,14 @@ type KubeAuth struct {
 	client         client.Client
 	userCache      sync.Map // Thread-safe cache for User objects: string -> *ftpv1.User
 	sessionUserMap sync.Map // Thread-safe map for session-based authentication: sessionID -> string
+	bruteForce     *BruteForceProtector
 }
 
 // NewKubeAuth creates a new KubeAuth instance
 func NewKubeAuth(kubeClient client.Client) *KubeAuth {
 	return &KubeAuth{
-		client: kubeClient,
+		client:     kubeClient,
+		bruteForce: newBruteForceProtector(),
 	}
 }
 
@@ -72,6 +74,15 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	logger := ctrl.Log.WithName("auth")
 	logger.Info("Authenticating user", "username", username)
 
+	clientIP := auth.clientIPFromCtx(ctx)
+
+	// Reject immediately if the username or source IP is currently locked out.
+	if auth.bruteForce.IsLockedOut(username, clientIP) {
+		authFailures.WithLabelValues(username, "locked_out").Inc()
+		metrics.RecordUserLogin(username, "locked_out")
+		return false, nil
+	}
+
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -79,6 +90,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	user := auth.GetUser(authCtx, username)
 	if user == nil {
 		logger.Info("User not found", "username", username)
+		auth.bruteForce.RecordFailure(username, clientIP)
 		metrics.RecordUserLogin(username, "user_not_found")
 		return false, nil
 	}
@@ -86,6 +98,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	// Check if user is enabled
 	if !user.Spec.Enabled {
 		logger.Info("User is disabled", "username", username)
+		auth.bruteForce.RecordFailure(username, clientIP)
 		authFailures.WithLabelValues(username, "user_disabled").Inc()
 		metrics.RecordUserLogin(username, "failure")
 		return false, nil
@@ -145,6 +158,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 
 	if authenticated {
 		logger.Info("User authenticated successfully", "username", username, "user_type", userType)
+		auth.bruteForce.RecordSuccess(username, clientIP)
 		// Store in session-based map using connection identifier
 		sessionID := auth.getSessionID(ctx)
 		auth.setSessionUser(sessionID, username)
@@ -153,8 +167,21 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	}
 
 	logger.Info("User authentication failed", "username", username)
+	auth.bruteForce.RecordFailure(username, clientIP)
 	metrics.RecordUserLogin(username, "failure")
 	return false, nil
+}
+
+// clientIPFromCtx extracts the client IP address from an FTP server context.
+func (auth *KubeAuth) clientIPFromCtx(ctx *server.Context) string {
+	if ctx == nil || ctx.Sess == nil {
+		return "unknown"
+	}
+	addr := ctx.Sess.RemoteAddr()
+	if addr == nil {
+		return "unknown"
+	}
+	return addr.String()
 }
 
 // checkRegularUserPassword validates regular user passwords (existing logic)
