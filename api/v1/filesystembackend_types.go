@@ -18,6 +18,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // FilesystemBackendSpec defines the desired state of FilesystemBackend
@@ -111,5 +112,8 @@ type FilesystemBackendList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&FilesystemBackend{}, &FilesystemBackendList{})
+	SchemeBuilder = append(SchemeBuilder, func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &FilesystemBackend{}, &FilesystemBackendList{})
+		return nil
+	})
 }

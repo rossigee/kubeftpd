@@ -18,6 +18,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -159,5 +160,8 @@ type WebDavBackendList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&WebDavBackend{}, &WebDavBackendList{})
+	SchemeBuilder = append(SchemeBuilder, func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &WebDavBackend{}, &WebDavBackendList{})
+		return nil
+	})
 }

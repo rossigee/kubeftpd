@@ -18,6 +18,7 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -183,5 +184,8 @@ type MinioBackendList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&MinioBackend{}, &MinioBackendList{})
+	SchemeBuilder = append(SchemeBuilder, func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &MinioBackend{}, &MinioBackendList{})
+		return nil
+	})
 }
