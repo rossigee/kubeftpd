@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/tls"
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -115,4 +118,113 @@ func TestProcessEnvironmentOverrides_PASVPorts(t *testing.T) {
 	t.Setenv("FTP_PASSIVE_PORT_MAX", "11020")
 	processEnvironmentOverrides(config2)
 	assert.Equal(t, "11000-11020", config2.ftpPasvPorts)
+}
+
+func TestSetupTLSOptions(t *testing.T) {
+	tests := []struct {
+		name        string
+		enableHTTP2 bool
+		expectedLen int
+	}{
+		{
+			name:        "HTTP2 disabled",
+			enableHTTP2: false,
+			expectedLen: 1, // Should have one TLS option to disable HTTP/2
+		},
+		{
+			name:        "HTTP2 enabled",
+			enableHTTP2: true,
+			expectedLen: 0, // Should have no TLS options
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := setupTLSOptions(tt.enableHTTP2)
+			assert.Len(t, opts, tt.expectedLen)
+
+			if !tt.enableHTTP2 {
+				// Test that the option actually disables HTTP/2
+				tlsConfig := &tls.Config{NextProtos: []string{"h2", "http/1.1"}}
+				opts[0](tlsConfig)
+				assert.Equal(t, []string{"http/1.1"}, tlsConfig.NextProtos)
+			}
+		})
+	}
+}
+
+func TestCreateHTTPHandler(t *testing.T) {
+	mux := createHTTPHandler()
+	assert.NotNil(t, mux)
+
+	// Test the root endpoint returns JSON
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	// Find the handler for "/"
+	handler, pattern := mux.Handler(req)
+	assert.Equal(t, "/", pattern)
+	assert.NotNil(t, handler)
+
+	// Call the handler
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	// Parse JSON response
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "kubeftpd", response["service"])
+	assert.NotEmpty(t, response["version"])
+	assert.NotEmpty(t, response["commit"])
+	assert.NotEmpty(t, response["date"])
+	assert.Equal(t, "running", response["status"])
+}
+
+func TestSetupCertWatcher(t *testing.T) {
+	tests := []struct {
+		name        string
+		certPath    string
+		certName    string
+		certKey     string
+		expectError bool
+	}{
+		{
+			name:        "empty cert path returns nil",
+			certPath:    "",
+			certName:    "tls.crt",
+			certKey:     "tls.key",
+			expectError: false,
+		},
+		{
+			name:        "valid cert path creates watcher",
+			certPath:    "/tmp",
+			certName:    "tls.crt",
+			certKey:     "tls.key",
+			expectError: true, // Will fail because cert files don't exist
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			watcher, err := setupCertWatcher(tt.certPath, tt.certName, tt.certKey, "test")
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, watcher)
+			} else {
+				assert.NoError(t, err)
+				assert.Nil(t, watcher)
+			}
+		})
+	}
+}
+
+func TestAddCertWatchersToManager(t *testing.T) {
+	// Test with nil watchers - should succeed (no watchers to add)
+	err := addCertWatchersToManager(nil, nil, nil)
+	assert.NoError(t, err)
 }

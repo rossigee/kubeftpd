@@ -14,25 +14,26 @@ spec:
     metadata:
       labels:
         {{- include "kubeftpd.selectorLabels" . | nindent 8 }}
-        {{- with .Values.commonLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- with .Values.commonLabels }}
       annotations:
-        {{- with .Values.commonAnnotations }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
+      {{- with .Values.commonAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
-      {{- if .Values.controller.nodeSelector }}
+      {{- with .Values.controller.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.controller.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.controller.tolerations }}
+      {{- with .Values.controller.tolerations }}
       tolerations:
-        {{- toYaml .Values.controller.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.controller.affinity }}
+      {{- with .Values.controller.affinity }}
       affinity:
-        {{- toYaml .Values.controller.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: manager

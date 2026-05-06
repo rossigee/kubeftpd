@@ -17,6 +17,7 @@ import (
 // caSecretRef takes precedence over caCert when both are provided.
 // backendNamespace is used as the default namespace for the secret lookup.
 func buildTLSConfig(
+	ctx context.Context,
 	insecureSkipVerify bool,
 	caCert string,
 	caSecretRef *ftpv1.TLSCASecretRef,
@@ -40,7 +41,7 @@ func buildTLSConfig(
 			key = "ca.crt"
 		}
 		secret := &corev1.Secret{}
-		if err := kubeClient.Get(context.TODO(), client.ObjectKey{Name: caSecretRef.Name, Namespace: ns}, secret); err != nil {
+		if err := kubeClient.Get(ctx, client.ObjectKey{Name: caSecretRef.Name, Namespace: ns}, secret); err != nil {
 			return nil, fmt.Errorf("failed to get CA secret %s/%s: %w", ns, caSecretRef.Name, err)
 		}
 		data, exists := secret.Data[key]

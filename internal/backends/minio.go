@@ -47,6 +47,7 @@ func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeC
 	var transport *http.Transport
 	if backend.Spec.TLS != nil {
 		tlsConfig, err := buildTLSConfig(
+			ctx,
 			backend.Spec.TLS.InsecureSkipVerify,
 			backend.Spec.TLS.CACert,
 			backend.Spec.TLS.CASecretRef,

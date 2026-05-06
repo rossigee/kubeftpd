@@ -46,7 +46,7 @@ func TestBuildTLSConfig_NoCA(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	cfg, err := buildTLSConfig(false, "", nil, "default", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), false, "", nil, "default", kubeClient)
 	require.NoError(t, err)
 	assert.False(t, cfg.InsecureSkipVerify)
 	assert.Nil(t, cfg.RootCAs)
@@ -57,7 +57,7 @@ func TestBuildTLSConfig_InsecureSkipVerify(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	cfg, err := buildTLSConfig(true, "", nil, "default", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), true, "", nil, "default", kubeClient)
 	require.NoError(t, err)
 	assert.True(t, cfg.InsecureSkipVerify)
 	assert.Nil(t, cfg.RootCAs)
@@ -69,7 +69,7 @@ func TestBuildTLSConfig_InlinePEM(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 	caPEM := selfSignedCA(t)
-	cfg, err := buildTLSConfig(false, string(caPEM), nil, "default", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), false, string(caPEM), nil, "default", kubeClient)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.RootCAs)
 }
@@ -79,7 +79,7 @@ func TestBuildTLSConfig_InlinePEM_Invalid(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	_, err := buildTLSConfig(false, "not-a-pem", nil, "default", kubeClient)
+	_, err := buildTLSConfig(context.Background(), false, "not-a-pem", nil, "default", kubeClient)
 	assert.ErrorContains(t, err, "no valid PEM certificates found")
 }
 
@@ -97,7 +97,7 @@ func TestBuildTLSConfig_CASecretRef(t *testing.T) {
 
 	ns := "certs"
 	ref := &ftpv1.TLSCASecretRef{Name: "my-ca", Namespace: &ns, Key: "ca.crt"}
-	cfg, err := buildTLSConfig(false, "", ref, "default", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), false, "", ref, "default", kubeClient)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.RootCAs)
 }
@@ -116,7 +116,7 @@ func TestBuildTLSConfig_CASecretRef_DefaultNamespace(t *testing.T) {
 
 	// Namespace field omitted — should fall back to backendNamespace
 	ref := &ftpv1.TLSCASecretRef{Name: "my-ca"}
-	cfg, err := buildTLSConfig(false, "", ref, "backend-ns", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), false, "", ref, "backend-ns", kubeClient)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.RootCAs)
 }
@@ -135,7 +135,7 @@ func TestBuildTLSConfig_CASecretRef_DefaultKey(t *testing.T) {
 
 	// Key field omitted — should default to "ca.crt"
 	ref := &ftpv1.TLSCASecretRef{Name: "my-ca"}
-	cfg, err := buildTLSConfig(false, "", ref, "default", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), false, "", ref, "default", kubeClient)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.RootCAs)
 }
@@ -146,7 +146,7 @@ func TestBuildTLSConfig_CASecretRef_SecretNotFound(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 	ref := &ftpv1.TLSCASecretRef{Name: "missing-ca"}
-	_, err := buildTLSConfig(false, "", ref, "default", kubeClient)
+	_, err := buildTLSConfig(context.Background(), false, "", ref, "default", kubeClient)
 	assert.ErrorContains(t, err, "failed to get CA secret")
 }
 
@@ -161,7 +161,7 @@ func TestBuildTLSConfig_CASecretRef_KeyNotFound(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 
 	ref := &ftpv1.TLSCASecretRef{Name: "my-ca", Key: "ca.crt"}
-	_, err := buildTLSConfig(false, "", ref, "default", kubeClient)
+	_, err := buildTLSConfig(context.Background(), false, "", ref, "default", kubeClient)
 	assert.ErrorContains(t, err, `key "ca.crt" not found`)
 }
 
@@ -182,11 +182,11 @@ func TestBuildTLSConfig_CASecretRef_TakesPrecedenceOverInlinePEM(t *testing.T) {
 	// would never be exercised. We verify by pointing the ref at a non-existent secret
 	// to prove the ref path (not the inline path) was taken.
 	ref2 := &ftpv1.TLSCASecretRef{Name: "does-not-exist"}
-	_, err := buildTLSConfig(false, string(caPEM), ref2, "default", kubeClient)
+	_, err := buildTLSConfig(context.Background(), false, string(caPEM), ref2, "default", kubeClient)
 	assert.ErrorContains(t, err, "failed to get CA secret")
 
 	// And when the ref exists, we get a valid pool (not an error from inline PEM parsing)
-	cfg, err := buildTLSConfig(false, "not-a-pem", ref, "default", kubeClient)
+	cfg, err := buildTLSConfig(context.Background(), false, "not-a-pem", ref, "default", kubeClient)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.RootCAs)
 }

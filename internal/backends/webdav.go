@@ -2,10 +2,12 @@ package backends
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,28 @@ import (
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 )
+
+// davResponse is a minimal struct for parsing WebDAV PROPFIND multi-status responses.
+type davResponse struct {
+	Responses []davResponseEntry `xml:"response"`
+}
+
+type davResponseEntry struct {
+	Href     string        `xml:"href"`
+	Propstat []davPropstat `xml:"propstat"`
+}
+
+type davPropstat struct {
+	Prop   davProp `xml:"prop"`
+	Status string  `xml:"status"`
+}
+
+type davProp struct {
+	ResourceType  *struct{} `xml:"resourcetype>collection"`
+	ContentLength string    `xml:"getcontentlength"`
+	LastModified  string    `xml:"getlastmodified"`
+	DisplayName   string    `xml:"displayname"`
+}
 
 // webDavBackendImpl implements WebDavBackend interface using HTTP client
 type webDavBackendImpl struct {
@@ -47,6 +71,7 @@ func newWebDavBackendImpl(ctx context.Context, backend *ftpv1.WebDavBackend, kub
 	// Configure TLS if specified
 	if backend.Spec.TLS != nil {
 		tlsConfig, err := buildTLSConfig(
+			ctx,
 			backend.Spec.TLS.InsecureSkipVerify,
 			backend.Spec.TLS.CACert,
 			backend.Spec.TLS.CASecretRef,
@@ -168,15 +193,43 @@ func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 		return nil, fmt.Errorf("PROPFIND failed with status: %d", resp.StatusCode)
 	}
 
-	// TODO: Parse XML response to extract file information
-	// For now, return basic file info
-	return &FileInfo{
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PROPFIND response: %w", err)
+	}
+
+	fi := &FileInfo{
 		Name:    path.Base(filePath),
-		Size:    0,
 		Mode:    0644,
 		ModTime: time.Now(),
-		IsDir:   false,
-	}, nil
+	}
+
+	// Parse XML if the body is non-empty; tolerate servers that return 207 with no body.
+	if len(body) > 0 {
+		var ms davResponse
+		if err := xml.Unmarshal(body, &ms); err != nil {
+			return nil, fmt.Errorf("failed to parse PROPFIND response: %w", err)
+		}
+		if len(ms.Responses) > 0 {
+			for _, ps := range ms.Responses[0].Propstat {
+				if ps.Prop.ResourceType != nil {
+					fi.IsDir = true
+					fi.Mode = 0755
+				}
+				if ps.Prop.ContentLength != "" {
+					size, _ := strconv.ParseInt(ps.Prop.ContentLength, 10, 64)
+					fi.Size = size
+				}
+				if ps.Prop.LastModified != "" {
+					if t, err := time.Parse(time.RFC1123, ps.Prop.LastModified); err == nil {
+						fi.ModTime = t
+					}
+				}
+			}
+		}
+	}
+
+	return fi, nil
 }
 
 // Exists checks if a file or directory exists
@@ -390,9 +443,49 @@ func (w *webDavBackendImpl) ReadDir(dirPath string) ([]*FileInfo, error) {
 		return nil, fmt.Errorf("PROPFIND failed with status: %d", resp.StatusCode)
 	}
 
-	// TODO: Parse XML response to extract directory entries
-	// For now, return empty list
-	return []*FileInfo{}, nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PROPFIND response: %w", err)
+	}
+
+	var ms davResponse
+	if err := xml.Unmarshal(body, &ms); err != nil {
+		return nil, fmt.Errorf("failed to parse PROPFIND response: %w", err)
+	}
+
+	var entries []*FileInfo
+	for i, entry := range ms.Responses {
+		// Depth=1 includes the directory itself as the first entry — skip it
+		if i == 0 {
+			continue
+		}
+		fi := &FileInfo{
+			Name:    path.Base(entry.Href),
+			Mode:    0644,
+			ModTime: time.Now(),
+		}
+		for _, ps := range entry.Propstat {
+			if ps.Prop.ResourceType != nil {
+				fi.IsDir = true
+				fi.Mode = 0755
+			}
+			if ps.Prop.ContentLength != "" {
+				size, _ := strconv.ParseInt(ps.Prop.ContentLength, 10, 64)
+				fi.Size = size
+			}
+			if ps.Prop.LastModified != "" {
+				if t, err := time.Parse(time.RFC1123, ps.Prop.LastModified); err == nil {
+					fi.ModTime = t
+				}
+			}
+			if ps.Prop.DisplayName != "" {
+				fi.Name = ps.Prop.DisplayName
+			}
+		}
+		entries = append(entries, fi)
+	}
+
+	return entries, nil
 }
 
 // getFullPath combines the base path with the file path

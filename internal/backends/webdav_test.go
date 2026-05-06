@@ -348,6 +348,10 @@ func TestWebDavBackendImpl_Stat(t *testing.T) {
 				return
 			}
 		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
 		w.WriteHeader(404)
 	}))
 	defer testServer.Close()
@@ -375,7 +379,6 @@ func TestWebDavBackendImpl_Stat(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, fileInfo)
 	assert.Equal(t, "test.txt", fileInfo.Name)
-	// Note: Size and other fields are not parsed from XML yet
 }
 
 func TestWebDavBackendImpl_Exists(t *testing.T) {
@@ -386,6 +389,10 @@ func TestWebDavBackendImpl_Exists(t *testing.T) {
 				w.WriteHeader(207)
 				return
 			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
 		}
 		w.WriteHeader(404)
 	}))
@@ -425,11 +432,15 @@ func TestWebDavBackendImpl_Open(t *testing.T) {
 		if r.Method == "GET" && r.URL.Path == "/base/test.txt" {
 			user, pass, ok := r.BasicAuth()
 			if ok && user == "testuser" && pass == "testpass" {
-				w.Header().Set("Content-Length", "13")
+				w.Header().Set("Content-Length", "14")
 				w.WriteHeader(200)
 				_, _ = w.Write([]byte(testContent))
 				return
 			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
 		}
 		w.WriteHeader(404)
 	}))
@@ -492,7 +503,7 @@ func TestWebDavBackendImpl_WriteFile(t *testing.T) {
     <propstat>
       <prop>
         <resourcetype/>
-        <getcontentlength>21</getcontentlength>
+        <getcontentlength>20</getcontentlength>
       </prop>
       <status>HTTP/1.1 200 OK</status>
     </propstat>
@@ -503,6 +514,10 @@ func TestWebDavBackendImpl_WriteFile(t *testing.T) {
 				_, _ = w.Write([]byte(xmlResponse))
 				return
 			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
 		}
 		w.WriteHeader(404)
 	}))
@@ -541,6 +556,10 @@ func TestWebDavBackendImpl_Remove(t *testing.T) {
 				return
 			}
 		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
 		w.WriteHeader(404)
 	}))
 	defer testServer.Close()
@@ -576,6 +595,10 @@ func TestWebDavBackendImpl_RemoveAll(t *testing.T) {
 				w.WriteHeader(204)
 				return
 			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
 		}
 		w.WriteHeader(404)
 	}))
@@ -613,6 +636,10 @@ func TestWebDavBackendImpl_Rename(t *testing.T) {
 				return
 			}
 		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
 		w.WriteHeader(404)
 	}))
 	defer testServer.Close()
@@ -648,6 +675,10 @@ func TestWebDavBackendImpl_Mkdir(t *testing.T) {
 				w.WriteHeader(201)
 				return
 			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
 		}
 		w.WriteHeader(404)
 	}))
@@ -710,6 +741,10 @@ func TestWebDavBackendImpl_ReadDir(t *testing.T) {
 				return
 			}
 		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
 		w.WriteHeader(404)
 	}))
 	defer testServer.Close()
@@ -735,8 +770,9 @@ func TestWebDavBackendImpl_ReadDir(t *testing.T) {
 
 	entries, err := backend.ReadDir("testdir")
 	assert.NoError(t, err)
-	// Note: Currently returns empty list as XML parsing is not implemented
-	assert.Equal(t, 0, len(entries))
+	assert.Equal(t, 1, len(entries))
+	assert.Equal(t, "file1.txt", entries[0].Name)
+	assert.Equal(t, int64(100), entries[0].Size)
 }
 
 func TestWebDavBackendImpl_GetFullPath(t *testing.T) {
