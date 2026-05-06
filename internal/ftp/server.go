@@ -2,6 +2,7 @@ package ftp
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"goftp.io/server/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -66,8 +68,15 @@ type Server struct {
 	PasvPorts      string
 	PublicIP       string
 	WelcomeMessage string
-	client         client.Client
-	server         *server.Server
+	// TLSCertFile and TLSKeyFile are absolute paths to the server certificate and
+	// private key. When both are non-empty the server enables explicit FTPS
+	// (RFC 4217 / AUTH TLS) and uses a cert-watcher for hot reload.
+	TLSCertFile string
+	TLSKeyFile  string
+	// ForceTLS requires clients to upgrade to TLS before issuing any command.
+	ForceTLS bool
+	client   client.Client
+	server   *server.Server
 }
 
 // NewServer creates a new FTP server instance
@@ -128,6 +137,29 @@ func (s *Server) Start(ctx context.Context) error {
 		PassivePorts:   s.PasvPorts,
 		WelcomeMessage: s.WelcomeMessage,
 		Perm:           driver, // KubeDriver implements the Perm interface
+	}
+
+	if s.TLSCertFile != "" && s.TLSKeyFile != "" {
+		cw, err := certwatcher.New(s.TLSCertFile, s.TLSKeyFile)
+		if err != nil {
+			return fmt.Errorf("failed to create FTP TLS cert watcher: %w", err)
+		}
+		// Start the cert-watcher in its own goroutine so it reloads on rotation.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := cw.Start(ctx); err != nil {
+				logger.Error(err, "FTP TLS cert watcher stopped")
+			}
+		}()
+		opts.TLS = true
+		opts.ExplicitFTPS = true
+		opts.ForceTLS = s.ForceTLS
+		opts.TLSConfig = &tls.Config{
+			GetCertificate: cw.GetCertificate,
+			MinVersion:     tls.VersionTLS12,
+		}
+		logger.Info("FTPS enabled (explicit TLS / RFC 4217)", "cert", s.TLSCertFile, "force-tls", s.ForceTLS)
 	}
 
 	ftpServer, err := server.NewServer(opts)

@@ -37,6 +37,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -81,6 +82,10 @@ type appConfig struct {
 	ftpPasvPorts      string
 	ftpPublicIP       string
 	ftpWelcomeMessage string
+	ftpTLSCertPath    string
+	ftpTLSCertName    string
+	ftpTLSCertKey     string
+	ftpForceTLS       bool
 	// Built-in anonymous user settings
 	enableAnonymous      bool
 	anonymousHomeDir     string
@@ -127,6 +132,10 @@ func parseFlags() (*appConfig, zap.Options) {
 	flag.IntVar(&config.ftpPort, "ftp-port", getDefaultFTPPort(), "The port on which the FTP server listens")
 	flag.StringVar(&config.ftpPasvPorts, "ftp-pasv-ports", "10000-10020", "The range of ports for FTP passive mode")
 	flag.StringVar(&config.ftpPublicIP, "ftp-public-ip", "", "The public IP address for FTP passive mode (PASV) responses")
+	flag.StringVar(&config.ftpTLSCertPath, "ftp-tls-cert-path", "", "Directory containing the FTP TLS certificate and key (enables explicit FTPS / RFC 4217)")
+	flag.StringVar(&config.ftpTLSCertName, "ftp-tls-cert-name", "tls.crt", "Filename of the FTP TLS certificate within --ftp-tls-cert-path")
+	flag.StringVar(&config.ftpTLSCertKey, "ftp-tls-cert-key", "tls.key", "Filename of the FTP TLS private key within --ftp-tls-cert-path")
+	flag.BoolVar(&config.ftpForceTLS, "ftp-force-tls", false, "Require clients to upgrade to TLS before issuing any FTP command (AUTH TLS must be the first command)")
 
 	// Built-in anonymous user flags
 	flag.BoolVar(&config.enableAnonymous, "enable-anonymous", false, "Enable anonymous FTP access (RFC 1635)")
@@ -187,6 +196,8 @@ func processEnvironmentOverrides(config *appConfig) {
 	if envHTTPBindAddress := os.Getenv("HTTP_BIND_ADDRESS"); envHTTPBindAddress != "" {
 		config.metricsAddr = envHTTPBindAddress
 	}
+
+	applyFTPTLSEnvOverrides(config)
 
 	if envEnableProfiling := os.Getenv("ENABLE_PROFILING"); envEnableProfiling != "" {
 		if enabled, err := strconv.ParseBool(envEnableProfiling); err == nil {
@@ -373,6 +384,36 @@ func addCertWatchersToManager(mgr ctrl.Manager, metricsCertWatcher, webhookCertW
 	return nil
 }
 
+func buildFTPServer(config *appConfig, kubeClient client.Client) *ftp.Server {
+	s := ftp.NewServer(config.ftpBindAddress, config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, kubeClient)
+	if config.ftpTLSCertPath != "" {
+		s.TLSCertFile = filepath.Join(config.ftpTLSCertPath, config.ftpTLSCertName)
+		s.TLSKeyFile = filepath.Join(config.ftpTLSCertPath, config.ftpTLSCertKey)
+		s.ForceTLS = config.ftpForceTLS
+	}
+	return s
+}
+
+func applyFTPTLSEnvOverrides(config *appConfig) {
+	if v := os.Getenv("FTP_TLS_CERT_PATH"); v != "" {
+		config.ftpTLSCertPath = v
+	}
+	if v := os.Getenv("FTP_TLS_CERT_NAME"); v != "" {
+		config.ftpTLSCertName = v
+	}
+	if v := os.Getenv("FTP_TLS_CERT_KEY"); v != "" {
+		config.ftpTLSCertKey = v
+	}
+	if v := os.Getenv("FTP_FORCE_TLS"); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			config.ftpForceTLS = enabled
+		} else {
+			setupLog.Error(err, "invalid FTP_FORCE_TLS environment variable", "value", v)
+			os.Exit(1)
+		}
+	}
+}
+
 func setupHealthChecks(mgr ctrl.Manager) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
@@ -466,7 +507,7 @@ func main() {
 	}
 
 	// Start FTP server
-	ftpServer := ftp.NewServer(config.ftpBindAddress, config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, mgr.GetClient())
+	ftpServer := buildFTPServer(config, mgr.GetClient())
 	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	defer cancel()
 

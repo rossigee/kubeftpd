@@ -305,6 +305,40 @@ func TestServerCreationWithClient(t *testing.T) {
 	assert.Nil(t, server.client)
 }
 
+// TestServerTLSConfiguration verifies TLS fields are correctly set on the Server struct.
+func TestServerTLSConfiguration(t *testing.T) {
+	fakeClient := fake.NewClientBuilder().Build()
+	s := NewServer("127.0.0.1", 2121, "6000-6100", "127.0.0.1", "Welcome", fakeClient)
+
+	// Default: no TLS
+	assert.Empty(t, s.TLSCertFile)
+	assert.Empty(t, s.TLSKeyFile)
+	assert.False(t, s.ForceTLS)
+
+	s.TLSCertFile = "/certs/tls.crt"
+	s.TLSKeyFile = "/certs/tls.key"
+	s.ForceTLS = true
+
+	assert.Equal(t, "/certs/tls.crt", s.TLSCertFile)
+	assert.Equal(t, "/certs/tls.key", s.TLSKeyFile)
+	assert.True(t, s.ForceTLS)
+}
+
+// TestServerTLSInvalidCert verifies that Start returns an error when TLS cert files do not exist.
+func TestServerTLSInvalidCert(t *testing.T) {
+	fakeClient := fake.NewClientBuilder().Build()
+	s := NewServer("127.0.0.1", 0, "6000-6100", "127.0.0.1", "Welcome", fakeClient)
+	s.TLSCertFile = "/nonexistent/tls.crt"
+	s.TLSKeyFile = "/nonexistent/tls.key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := s.Start(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "FTP TLS cert watcher")
+}
+
 // findFreePort finds an available port for testing
 func findFreePort(t *testing.T) int {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
