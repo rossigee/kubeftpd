@@ -221,15 +221,19 @@ type KubeDriver struct {
 	auth              *KubeAuth
 	user              *ftpv1.User
 	storageImpl       storage.Storage
-	authenticatedUser string    // Track the authenticated username
-	sessionStart      time.Time // Track session start time
-	clientIP          string    // Track client IP
-	sessionID         string    // Track session ID for cleanup
+	authenticatedUser string             // Track the authenticated username
+	sessionStart      time.Time          // Track session start time
+	clientIP          string             // Track client IP
+	sessionID         string             // Track session ID for cleanup
+	sessionCtx        context.Context    // Per-session context; cancelled in Close
+	sessionCancel     context.CancelFunc // Cancels sessionCtx on connection close
 }
 
 func (driver *KubeDriver) Init(conn *server.Context) {
 	logger := getLogger()
 	logger.Info("Initializing FTP driver for connection")
+
+	driver.sessionCtx, driver.sessionCancel = context.WithCancel(context.Background())
 
 	// Store session ID for authenticated user lookup
 	driver.sessionID = driver.auth.getSessionID(conn)
@@ -699,7 +703,7 @@ func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) 
 	logger.Info("ensureUserInitialized: setting up user", "username", username)
 
 	// Get the user from the auth cache
-	user := driver.auth.GetUser(username)
+	user := driver.auth.GetUser(driver.sessionCtx, username)
 	if user == nil {
 		logger.Error(nil, "ensureUserInitialized failed: user not found in auth cache", "username", username)
 		return fmt.Errorf("user %s not found in auth cache", username)
@@ -711,7 +715,7 @@ func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) 
 			"username", username, "backend_kind", user.Spec.Backend.Kind, "backend_name", user.Spec.Backend.Name)
 
 		var err error
-		driver.storageImpl, err = storage.NewStorage(user, driver.client)
+		driver.storageImpl, err = storage.NewStorage(driver.sessionCtx, user, driver.client)
 		if err != nil {
 			logger.Error(err, "ensureUserInitialized failed: storage initialization error", "username", username)
 			return fmt.Errorf("failed to initialize storage for user %s: %w", user.Spec.Username, err)
@@ -746,8 +750,11 @@ func (driver *KubeDriver) getBackendType() string {
 }
 
 // Close handles connection cleanup and metrics recording
-// Close handles connection cleanup and metrics recording
 func (driver *KubeDriver) Close() error {
+	if driver.sessionCancel != nil {
+		driver.sessionCancel()
+	}
+
 	// Clean up session mapping to prevent memory leaks
 	if driver.auth != nil && driver.sessionID != "" {
 		driver.auth.ClearSessionUser(driver.sessionID)

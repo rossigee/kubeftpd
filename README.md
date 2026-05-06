@@ -708,11 +708,20 @@ kubectl apply -f https://github.com/rossigee/kubeftpd/releases/latest/download/c
 
 3. **Deploy using Helm (recommended):**
 ```bash
-helm repo add kubeftpd https://rossigee.github.io/kubeftpd
-helm install kubeftpd kubeftpd/kubeftpd -n kubeftpd-system \
-  --set controller.image.tag=v0.7.0 \
+# Install directly from GHCR (GitHub Container Registry)
+helm install kubeftpd oci://ghcr.io/rossigee/kubeftpd/kubeftpd \
+  --version 0.6.0 \
+  --namespace kubeftpd-system \
+  --create-namespace \
+  --set controller.image.tag=latest \
   --set webhook.enabled=true \
   --set ftp.service.port=2121  # Example: override default port
+```
+
+**Alternative: Add GHCR as Helm repository**
+```bash
+# Note: GHCR doesn't support traditional helm repo add yet
+# Use OCI protocol directly as shown above
 ```
 
 **Helm Configuration Options:**

@@ -25,7 +25,7 @@ type webDavBackendImpl struct {
 }
 
 // newWebDavBackendImpl creates a new WebDAV backend implementation
-func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client) (WebDavBackend, error) {
+func newWebDavBackendImpl(ctx context.Context, backend *ftpv1.WebDavBackend, kubeClient client.Client) (WebDavBackend, error) {
 	// Get credentials
 	username := backend.Spec.Credentials.Username
 	password := backend.Spec.Credentials.Password
@@ -33,7 +33,7 @@ func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client
 	// If useSecret is specified, read from Kubernetes Secret
 	if backend.Spec.Credentials.UseSecret != nil {
 		var err error
-		username, password, err = getWebDavCredentialsFromSecret(backend.Spec.Credentials.UseSecret, backend.Namespace, kubeClient)
+		username, password, err = getWebDavCredentialsFromSecret(ctx, backend.Spec.Credentials.UseSecret, backend.Namespace, kubeClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get credentials from secret: %w", err)
 		}
@@ -90,7 +90,7 @@ func newWebDavBackendImpl(backend *ftpv1.WebDavBackend, kubeClient client.Client
 }
 
 // getWebDavCredentialsFromSecret retrieves WebDAV credentials from a Kubernetes Secret
-func getWebDavCredentialsFromSecret(secretRef *ftpv1.WebDavSecretRef, backendNamespace string, kubeClient client.Client) (string, string, error) {
+func getWebDavCredentialsFromSecret(ctx context.Context, secretRef *ftpv1.WebDavSecretRef, backendNamespace string, kubeClient client.Client) (string, string, error) {
 	if secretRef == nil {
 		return "", "", fmt.Errorf("secret reference is nil")
 	}
@@ -101,7 +101,7 @@ func getWebDavCredentialsFromSecret(secretRef *ftpv1.WebDavSecretRef, backendNam
 	}
 
 	secret := &corev1.Secret{}
-	err := kubeClient.Get(context.TODO(), client.ObjectKey{
+	err := kubeClient.Get(ctx, client.ObjectKey{
 		Name:      secretRef.Name,
 		Namespace: secretNamespace,
 	}, secret)

@@ -18,12 +18,8 @@ spec:
 
   chart:
     spec:
-      chart: kubeftpd
-      version: ">=0.5.0"  # Use latest compatible version
-      sourceRef:
-        kind: HelmRepository
-        name: kubeftpd
-        namespace: flux-system
+      chart: oci://ghcr.io/rossigee/kubeftpd/kubeftpd
+      version: ">=0.6.0"  # Use latest compatible version
       interval: 5m
 
   # Values for Cozystack deployment

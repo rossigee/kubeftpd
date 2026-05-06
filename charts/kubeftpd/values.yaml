@@ -1,0 +1,147 @@
+# Default values for kubeftpd Helm chart
+
+# Controller configuration
+controller:
+  image:
+    registry: ghcr.io
+    repository: rossigee/kubeftpd
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  replicas: 1
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 65532
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Node selector, tolerations, and affinity
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# FTP service configuration
+ftp:
+  service:
+    type: ClusterIP
+    port: 21
+    passivePortRange:
+      min: 10000
+      max: 10004
+
+  settings:
+    welcomeMessage: "Welcome to KubeFTPd"
+    idleTimeout: 300
+    maxConnections: 50
+
+# Storage backends
+backends:
+  filesystem:
+    enabled: true
+    instances: []
+      # Example:
+      # - name: default-storage
+      #   basePath: /data
+      #   readOnly: false
+      #   fileMode: "0644"
+      #   dirMode: "0755"
+      #   maxFileSize: 104857600  # 100MB
+      #   pvc:
+      #     enabled: true
+      #     name: kubeftpd-storage
+      #     size: 5Gi
+      #     accessModes:
+      #       - ReadWriteOnce
+
+  webdav:
+    enabled: false
+    instances: []
+
+  minio:
+    enabled: false
+    instances: []
+
+# User configuration
+users:
+  admin:
+    enabled: false
+    username: "admin"
+    passwordSecret:
+      name: "kubeftpd-admin-password"
+      key: "password"
+    homeDirectory: "/admin"
+    backend:
+      kind: "FilesystemBackend"
+      name: "default-storage"
+
+  anonymous:
+    enabled: false
+    username: "anonymous"
+    homeDirectory: "/anonymous"
+    backend:
+      kind: "FilesystemBackend"
+      name: "default-storage"
+
+  additional: []
+    # Example:
+    # - name: demo-user
+    #   username: "demo"
+    #   passwordSecret:
+    #     name: "kubeftpd-demo-password"
+    #     key: "password"
+    #   homeDirectory: "/demo"
+    #   backend:
+    #     kind: "FilesystemBackend"
+    #     name: "default-storage"
+    #   permissions:
+    #     read: true
+    #     write: true
+    #     delete: false
+    #     list: true
+
+# Webhook configuration for user validation
+webhook:
+  enabled: true
+  validation:
+    passwordStrength:
+      enabled: true
+      minLength: 12
+      requireComplexity: true
+    production:
+      enabled: true
+      requireSecrets: true
+
+# Network policy
+networkPolicy:
+  enabled: false
+  ingress: []
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Common labels and annotations
+commonLabels: {}
+commonAnnotations: {}

@@ -72,8 +72,11 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	logger := ctrl.Log.WithName("auth")
 	logger.Info("Authenticating user", "username", username)
 
+	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Get user from cache or Kubernetes
-	user := auth.GetUser(username)
+	user := auth.GetUser(authCtx, username)
 	if user == nil {
 		logger.Info("User not found", "username", username)
 		metrics.RecordUserLogin(username, "user_not_found")
@@ -104,7 +107,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 		authAttempts.WithLabelValues(username, "anonymous", "success").Inc()
 	case "admin":
 		// Admin users must authenticate against secret
-		authenticated, err = auth.checkAdminPassword(user, password)
+		authenticated, err = auth.checkAdminPassword(authCtx, user, password)
 		if err != nil {
 			logger.Error(err, "Failed to check admin password", "username", username)
 			authFailures.WithLabelValues(username, "secret_error").Inc()
@@ -120,7 +123,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 		}
 	default: // "regular"
 		// Regular users use existing password validation logic
-		authenticated, err = auth.checkRegularUserPassword(user, password)
+		authenticated, err = auth.checkRegularUserPassword(authCtx, user, password)
 		if err != nil {
 			logger.Error(err, "Failed to check password for user", "username", username)
 			authFailures.WithLabelValues(username, "secret_error").Inc()
@@ -155,8 +158,8 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 }
 
 // checkRegularUserPassword validates regular user passwords (existing logic)
-func (auth *KubeAuth) checkRegularUserPassword(user *ftpv1.User, password string) (bool, error) {
-	userPassword, err := auth.getUserPassword(user)
+func (auth *KubeAuth) checkRegularUserPassword(ctx context.Context, user *ftpv1.User, password string) (bool, error) {
+	userPassword, err := auth.getUserPassword(ctx, user)
 	if err != nil {
 		return false, err
 	}
@@ -164,12 +167,12 @@ func (auth *KubeAuth) checkRegularUserPassword(user *ftpv1.User, password string
 }
 
 // checkAdminPassword validates admin user passwords against Kubernetes Secret
-func (auth *KubeAuth) checkAdminPassword(user *ftpv1.User, password string) (bool, error) {
+func (auth *KubeAuth) checkAdminPassword(ctx context.Context, user *ftpv1.User, password string) (bool, error) {
 	if user.Spec.PasswordSecret == nil {
 		return false, fmt.Errorf("admin user has no passwordSecret configured")
 	}
 
-	userPassword, err := auth.getPasswordFromSecret(user.Spec.PasswordSecret, user.Namespace)
+	userPassword, err := auth.getPasswordFromSecret(ctx, user.Spec.PasswordSecret, user.Namespace)
 	if err != nil {
 		return false, err
 	}
@@ -178,7 +181,7 @@ func (auth *KubeAuth) checkAdminPassword(user *ftpv1.User, password string) (boo
 }
 
 // GetUser returns a user from cache or loads from Kubernetes
-func (auth *KubeAuth) GetUser(username string) *ftpv1.User {
+func (auth *KubeAuth) GetUser(ctx context.Context, username string) *ftpv1.User {
 	// Try cache first
 	if cachedUser, ok := auth.userCache.Load(username); ok {
 		return cachedUser.(*ftpv1.User)
@@ -186,7 +189,7 @@ func (auth *KubeAuth) GetUser(username string) *ftpv1.User {
 
 	// Load from Kubernetes
 	userList := &ftpv1.UserList{}
-	if err := auth.client.List(context.TODO(), userList); err != nil {
+	if err := auth.client.List(ctx, userList); err != nil {
 		logger := getLogger()
 		logger.Error(err, "Failed to list users", "username", username)
 		return nil
@@ -316,7 +319,7 @@ func (auth *KubeAuth) ClearSessionUser(sessionID string) {
 }
 
 // getUserPassword retrieves the user's password from either direct field or secret
-func (auth *KubeAuth) getUserPassword(user *ftpv1.User) (string, error) {
+func (auth *KubeAuth) getUserPassword(ctx context.Context, user *ftpv1.User) (string, error) {
 	// If plaintext password is provided, use it
 	if user.Spec.Password != "" {
 		return user.Spec.Password, nil
@@ -324,19 +327,18 @@ func (auth *KubeAuth) getUserPassword(user *ftpv1.User) (string, error) {
 
 	// If secret reference is provided, retrieve from secret
 	if user.Spec.PasswordSecret != nil {
-		return auth.getPasswordFromSecret(user.Spec.PasswordSecret, user.Namespace)
+		return auth.getPasswordFromSecret(ctx, user.Spec.PasswordSecret, user.Namespace)
 	}
 
 	return "", fmt.Errorf("no password or passwordSecret specified for user %s", user.Spec.Username)
 }
 
 // getPasswordFromSecret retrieves password from a Kubernetes Secret
-func (auth *KubeAuth) getPasswordFromSecret(secretRef *ftpv1.UserSecretRef, userNamespace string) (string, error) {
+func (auth *KubeAuth) getPasswordFromSecret(ctx context.Context, secretRef *ftpv1.UserSecretRef, userNamespace string) (string, error) {
 	if secretRef == nil {
 		return "", fmt.Errorf("secret reference is nil")
 	}
 
-	ctx := context.TODO()
 	secretNamespace := userNamespace
 	if secretRef.Namespace != nil && *secretRef.Namespace != "" {
 		secretNamespace = *secretRef.Namespace

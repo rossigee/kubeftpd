@@ -40,21 +40,21 @@ func (cr *countingReader) Read(p []byte) (int, error) {
 }
 
 // NewStorage creates a new storage implementation based on the user's backend configuration
-func NewStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error) {
+func NewStorage(ctx context.Context, user *ftpv1.User, kubeClient client.Client) (Storage, error) {
 	switch user.Spec.Backend.Kind {
 	case "MinioBackend":
-		return newMinioStorage(user, kubeClient)
+		return newMinioStorage(ctx, user, kubeClient)
 	case "WebDavBackend":
-		return newWebDavStorage(user, kubeClient)
+		return newWebDavStorage(ctx, user, kubeClient)
 	case "FilesystemBackend":
-		return newFilesystemStorage(user, kubeClient)
+		return newFilesystemStorage(ctx, user, kubeClient)
 	default:
 		return nil, fmt.Errorf("unsupported backend kind: %s", user.Spec.Backend.Kind)
 	}
 }
 
 // newMinioStorage creates a MinIO-backed storage implementation
-func newMinioStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error) {
+func newMinioStorage(ctx context.Context, user *ftpv1.User, kubeClient client.Client) (Storage, error) {
 	// Get the MinioBackend CRD
 	backend := &ftpv1.MinioBackend{}
 	backendName := user.Spec.Backend.Name
@@ -63,7 +63,7 @@ func newMinioStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error
 		backendNamespace = *user.Spec.Backend.Namespace
 	}
 
-	err := kubeClient.Get(context.TODO(), client.ObjectKey{
+	err := kubeClient.Get(ctx, client.ObjectKey{
 		Name:      backendName,
 		Namespace: backendNamespace,
 	}, backend)
@@ -72,7 +72,7 @@ func newMinioStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error
 	}
 
 	// Create MinIO backend adapter
-	minioBackend, err := backends.NewMinioBackend(backend, kubeClient)
+	minioBackend, err := backends.NewMinioBackend(ctx, backend, kubeClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MinIO backend: %w", err)
 	}
@@ -87,7 +87,7 @@ func newMinioStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error
 }
 
 // newWebDavStorage creates a WebDAV-backed storage implementation
-func newWebDavStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error) {
+func newWebDavStorage(ctx context.Context, user *ftpv1.User, kubeClient client.Client) (Storage, error) {
 	// Get the WebDavBackend CRD
 	backend := &ftpv1.WebDavBackend{}
 	backendName := user.Spec.Backend.Name
@@ -96,7 +96,7 @@ func newWebDavStorage(user *ftpv1.User, kubeClient client.Client) (Storage, erro
 		backendNamespace = *user.Spec.Backend.Namespace
 	}
 
-	err := kubeClient.Get(context.TODO(), client.ObjectKey{
+	err := kubeClient.Get(ctx, client.ObjectKey{
 		Name:      backendName,
 		Namespace: backendNamespace,
 	}, backend)
@@ -105,7 +105,7 @@ func newWebDavStorage(user *ftpv1.User, kubeClient client.Client) (Storage, erro
 	}
 
 	// Create WebDAV backend adapter
-	webdavBackend, err := backends.NewWebDavBackend(backend, kubeClient)
+	webdavBackend, err := backends.NewWebDavBackend(ctx, backend, kubeClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WebDAV backend: %w", err)
 	}
@@ -119,7 +119,7 @@ func newWebDavStorage(user *ftpv1.User, kubeClient client.Client) (Storage, erro
 }
 
 // newFilesystemStorage creates a filesystem-backed storage implementation
-func newFilesystemStorage(user *ftpv1.User, kubeClient client.Client) (Storage, error) {
+func newFilesystemStorage(ctx context.Context, user *ftpv1.User, kubeClient client.Client) (Storage, error) {
 	// Get the FilesystemBackend CRD
 	backend := &ftpv1.FilesystemBackend{}
 	backendName := user.Spec.Backend.Name
@@ -128,7 +128,7 @@ func newFilesystemStorage(user *ftpv1.User, kubeClient client.Client) (Storage, 
 		backendNamespace = *user.Spec.Backend.Namespace
 	}
 
-	err := kubeClient.Get(context.TODO(), client.ObjectKey{
+	err := kubeClient.Get(ctx, client.ObjectKey{
 		Name:      backendName,
 		Namespace: backendNamespace,
 	}, backend)

@@ -4,9 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/minio/minio-go/v7"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +42,7 @@ func TestGetMinioCredentialsFromSecret_UseBackendNamespace(t *testing.T) {
 		// Namespace is nil - should default to backend namespace
 	}
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "test-access-key", accessKey)
@@ -81,7 +79,7 @@ func TestGetMinioCredentialsFromSecret_ExplicitNamespace(t *testing.T) {
 	}
 
 	// Backend is in 'kubeftpd' namespace, but secret should be found in 'custom' namespace
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "test-access-key", accessKey)
@@ -127,7 +125,7 @@ func TestGetMinioCredentialsFromSecret_RegressionTest_NoDefaultNamespace(t *test
 		// Namespace is nil - should use backend namespace (kubeftpd), NOT default
 	}
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 
 	assert.NoError(t, err)
 	// Should get the secret from kubeftpd namespace, not default
@@ -163,7 +161,7 @@ func TestGetMinioCredentialsFromSecret_CustomKeys(t *testing.T) {
 		SecretAccessKeyKey: "custom-secret-key",
 	}
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "test-access-key", accessKey)
@@ -184,7 +182,7 @@ func TestGetMinioCredentialsFromSecret_SecretNotFound(t *testing.T) {
 		Name: "nonexistent-secret",
 	}
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to get secret kubeftpd/nonexistent-secret")
@@ -218,7 +216,7 @@ func TestGetMinioCredentialsFromSecret_MissingKeys(t *testing.T) {
 		Name: "incomplete-credentials",
 	}
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "secret access key not found in secret")
@@ -236,7 +234,7 @@ func TestGetMinioCredentialsFromSecret_NilSecretRef(t *testing.T) {
 		WithScheme(scheme).
 		Build()
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(nil, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), nil, "kubeftpd", kubeClient)
 
 	assert.Error(t, err)
 	assert.Equal(t, "secret reference is nil", err.Error())
@@ -288,7 +286,7 @@ func TestMinioBackendNamespaceFix_IntegrationStyle(t *testing.T) {
 	}
 
 	// Test the secret lookup directly
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(),
 		backend.Spec.Credentials.UseSecret,
 		backend.Namespace,
 		kubeClient,
@@ -300,21 +298,6 @@ func TestMinioBackendNamespaceFix_IntegrationStyle(t *testing.T) {
 }
 
 // Additional tests for MinIO backend functions to improve coverage
-
-// Mock MinIO client for testing
-type MockMinioClient struct {
-	mock.Mock
-}
-
-func (m *MockMinioClient) StatObject(ctx context.Context, bucket, object string, opts minio.StatObjectOptions) (minio.ObjectInfo, error) {
-	args := m.Called(ctx, bucket, object, opts)
-	return args.Get(0).(minio.ObjectInfo), args.Error(1)
-}
-
-func (m *MockMinioClient) BucketExists(ctx context.Context, bucket string) (bool, error) {
-	args := m.Called(ctx, bucket)
-	return args.Bool(0), args.Error(1)
-}
 
 func TestNewMinioBackend_DirectCredentials(t *testing.T) {
 	// Test creating MinIO backend with direct credentials (not secret)
@@ -342,7 +325,7 @@ func TestNewMinioBackend_DirectCredentials(t *testing.T) {
 
 	// This test validates the credential handling logic but cannot actually
 	// create a MinIO connection without a real MinIO instance
-	minioBackend, err := NewMinioBackend(backend, kubeClient)
+	minioBackend, err := NewMinioBackend(context.Background(), backend, kubeClient)
 
 	// Expect connection error since there's no real MinIO server
 	assert.Error(t, err)
@@ -389,7 +372,7 @@ func TestNewMinioBackend_SecretCredentials(t *testing.T) {
 		},
 	}
 
-	minioBackend, err := NewMinioBackend(backend, kubeClient)
+	minioBackend, err := NewMinioBackend(context.Background(), backend, kubeClient)
 
 	// Expect connection error since there's no real MinIO server
 	assert.Error(t, err)
@@ -422,7 +405,7 @@ func TestNewMinioBackend_HTTPSEndpoint(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	minioBackend, err := NewMinioBackend(backend, kubeClient)
+	minioBackend, err := NewMinioBackend(context.Background(), backend, kubeClient)
 
 	// Expect connection error since there's no real MinIO server
 	assert.Error(t, err)
@@ -452,7 +435,7 @@ func TestNewMinioBackend_InvalidCredentials(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	minioBackend, err := NewMinioBackend(backend, kubeClient)
+	minioBackend, err := NewMinioBackend(context.Background(), backend, kubeClient)
 
 	assert.Error(t, err)
 	assert.Nil(t, minioBackend)
@@ -490,7 +473,7 @@ func TestMinioBackend_EmptyDirectoryRegression(t *testing.T) {
 		Name: "test-credentials",
 	}
 
-	accessKey, secretKey, err := getMinioCredentialsFromSecret(secretRef, "kubeftpd", kubeClient)
+	accessKey, secretKey, err := getMinioCredentialsFromSecret(context.Background(), secretRef, "kubeftpd", kubeClient)
 	assert.NoError(t, err)
 	assert.Equal(t, "test-access", accessKey)
 	assert.Equal(t, "test-secret", secretKey)
@@ -522,7 +505,7 @@ func TestMinioBackend_PathPrefixHandling(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	minioBackend, err := NewMinioBackend(backend, kubeClient)
+	minioBackend, err := NewMinioBackend(context.Background(), backend, kubeClient)
 
 	// Expect connection error since there's no real MinIO server
 	assert.Error(t, err)

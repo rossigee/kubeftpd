@@ -122,7 +122,7 @@ func (r *WebDavBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // testWebDavConnectivity tests connectivity to the WebDAV backend
 func (r *WebDavBackendReconciler) testWebDavConnectivity(ctx context.Context, backend *ftpv1.WebDavBackend) error {
 	// Create a WebDAV backend instance to test connectivity
-	_, err := backends.NewWebDavBackend(backend, r.Client)
+	_, err := backends.NewWebDavBackend(ctx, backend, r.Client)
 	if err != nil {
 		return fmt.Errorf("failed to create WebDAV backend: %w", err)
 	}

@@ -18,11 +18,13 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -85,6 +87,70 @@ var _ = Describe("WebDavBackend Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
+		})
+
+		It("should handle resource not found", func() {
+			By("Reconciling a non-existent resource")
+			controllerReconciler := &WebDavBackendReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			nonExistentName := types.NamespacedName{
+				Name:      "non-existent-resource",
+				Namespace: "default",
+			}
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: nonExistentName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(time.Duration(0)))
+		})
+
+		It("should add finalizer when missing", func() {
+			By("Creating a resource without finalizer")
+			resource := &ftpv1.WebDavBackend{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-finalizer-resource",
+					Namespace: "default",
+				},
+				Spec: ftpv1.WebDavBackendSpec{
+					Endpoint: "http://webdav:8080",
+					Credentials: ftpv1.WebDavCredentials{
+						Username: "testuser",
+						Password: "testpass",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			By("Reconciling the resource")
+			controllerReconciler := &WebDavBackendReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-finalizer-resource",
+					Namespace: "default",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(time.Second))
+
+			By("Verifying finalizer was added")
+			updatedResource := &ftpv1.WebDavBackend{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-finalizer-resource",
+				Namespace: "default",
+			}, updatedResource)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(controllerutil.ContainsFinalizer(updatedResource, "ftp.golder.org/finalizer")).To(BeTrue())
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, updatedResource)).To(Succeed())
 		})
 	})
 })

@@ -1,6 +1,7 @@
 package backends
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -213,7 +214,7 @@ func TestNewMinioBackend_WithInlineCACert(t *testing.T) {
 		},
 	}
 
-	_, err := NewMinioBackend(backend, kubeClient)
+	_, err := NewMinioBackend(context.Background(), backend, kubeClient)
 	// Expect a connection error (no real MinIO), not a TLS config error
 	assert.ErrorContains(t, err, "failed to connect to MinIO bucket")
 }
@@ -246,7 +247,7 @@ func TestNewMinioBackend_WithCASecretRef(t *testing.T) {
 		},
 	}
 
-	_, err := NewMinioBackend(backend, kubeClient)
+	_, err := NewMinioBackend(context.Background(), backend, kubeClient)
 	assert.ErrorContains(t, err, "failed to connect to MinIO bucket")
 }
 
@@ -271,7 +272,7 @@ func TestNewMinioBackend_WithCASecretRef_Missing(t *testing.T) {
 		},
 	}
 
-	_, err := NewMinioBackend(backend, kubeClient)
+	_, err := NewMinioBackend(context.Background(), backend, kubeClient)
 	assert.ErrorContains(t, err, "failed to build TLS config")
 	assert.ErrorContains(t, err, "failed to get CA secret")
 }

@@ -1,0 +1,26 @@
+---
+apiVersion: v2
+name: kubeftpd
+description: A Helm chart for KubeFTPd - Kubernetes-native FTP service
+type: application
+version: 0.6.0
+appVersion: "latest"
+keywords:
+  - ftp
+  - file-transfer
+  - kubernetes
+  - storage
+home: https://github.com/rossigee/kubeftpd
+sources:
+  - https://github.com/rossigee/kubeftpd
+maintainers:
+  - name: Ross Gee
+    email: ross@rossgee.com
+annotations:
+  artifacthub.io/category: "storage"
+  artifacthub.io/license: "Apache-2.0"
+  artifacthub.io/links: |
+    - name: "GitHub Repository"
+      url: "https://github.com/rossigee/kubeftpd"
+    - name: "Documentation"
+      url: "https://github.com/rossigee/kubeftpd#readme"

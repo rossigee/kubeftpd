@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-ftp
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.ftp.service.type }}
+  ports:
+    - port: {{ .Values.ftp.service.port }}
+      targetPort: 21
+      protocol: TCP
+      name: ftp
+  selector:
+    {{- include "kubeftpd.selectorLabels" . | nindent 4 }}

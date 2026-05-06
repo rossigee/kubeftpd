@@ -1,6 +1,7 @@
 package backends
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"time"
@@ -59,11 +60,11 @@ type WebDavBackend interface {
 }
 
 // NewMinioBackend creates a new MinIO backend from a MinioBackend CRD
-func NewMinioBackend(backend *ftpv1.MinioBackend, kubeClient client.Client) (MinioBackend, error) {
-	return newMinioBackendImpl(backend, kubeClient)
+func NewMinioBackend(ctx context.Context, backend *ftpv1.MinioBackend, kubeClient client.Client) (MinioBackend, error) {
+	return newMinioBackendImpl(ctx, backend, kubeClient)
 }
 
 // NewWebDavBackend creates a new WebDAV backend from a WebDavBackend CRD
-func NewWebDavBackend(backend *ftpv1.WebDavBackend, kubeClient client.Client) (WebDavBackend, error) {
-	return newWebDavBackendImpl(backend, kubeClient)
+func NewWebDavBackend(ctx context.Context, backend *ftpv1.WebDavBackend, kubeClient client.Client) (WebDavBackend, error) {
+	return newWebDavBackendImpl(ctx, backend, kubeClient)
 }

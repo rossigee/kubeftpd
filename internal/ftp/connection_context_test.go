@@ -1,6 +1,7 @@
 package ftp
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,7 +99,7 @@ func TestConnectionContextHandling(t *testing.T) {
 		// Debug: Check if we can get the user from session
 		sessionUser := auth.GetSessionUser(sessionID)
 		t.Logf("Session user: %s", sessionUser)
-		cachedUser := auth.GetUser("testuser")
+		cachedUser := auth.GetUser(context.Background(), "testuser")
 		t.Logf("Cached user: %v", cachedUser != nil)
 
 		// Since we can't easily mock the storage initialization for this test,
@@ -116,7 +117,7 @@ func TestConnectionContextHandling(t *testing.T) {
 		assert.Equal(t, "testuser", username, "Should resolve username from session-based authentication")
 
 		// 3. Verify we can get the user from cache
-		user := driver.auth.GetUser(username)
+		user := driver.auth.GetUser(context.Background(), username)
 		assert.NotNil(t, user, "Should find user in auth cache")
 		assert.Equal(t, "testuser", user.Spec.Username, "Should have correct username")
 
@@ -186,7 +187,7 @@ func TestConnectionContextHandling(t *testing.T) {
 		assert.Equal(t, "testuser", username, "Should resolve username from context for file operations")
 
 		// Verify we can get the user from cache
-		user := driver.auth.GetUser(username)
+		user := driver.auth.GetUser(context.Background(), username)
 		assert.NotNil(t, user, "Should find user in auth cache for file operations")
 		assert.Equal(t, "testuser", user.Spec.Username, "Should have correct username for file operations")
 

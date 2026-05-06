@@ -496,3 +496,25 @@ func TestFilesystemBackend_PathSecurity(t *testing.T) {
 		})
 	}
 }
+
+func TestFilesystemBackendImpl_WriteToTempFile(t *testing.T) {
+	backend := createTestBackend(t, createTestDir(t), false).(*filesystemBackendImpl)
+
+	tempFile, err := os.CreateTemp("", "test-temp-*")
+	require.NoError(t, err)
+	defer func() { _ = os.Remove(tempFile.Name()) }()
+	require.NoError(t, tempFile.Close())
+
+	testContent := "Hello, temporary file!"
+	reader := strings.NewReader(testContent)
+
+	bytesWritten, err := backend.writeToTempFile(tempFile.Name(), reader)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(len(testContent)), bytesWritten)
+
+	// Verify content was written
+	content, err := os.ReadFile(tempFile.Name())
+	assert.NoError(t, err)
+	assert.Equal(t, testContent, string(content))
+}

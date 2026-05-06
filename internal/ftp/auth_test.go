@@ -209,17 +209,17 @@ func TestKubeAuth_GetUser(t *testing.T) {
 	auth := NewKubeAuth(fakeClient)
 
 	// Test cache miss - should load from Kubernetes
-	user := auth.GetUser("testuser")
+	user := auth.GetUser(context.Background(), "testuser")
 	assert.NotNil(t, user)
 	assert.Equal(t, "testuser", user.Spec.Username)
 
 	// Test cache hit
-	user2 := auth.GetUser("testuser")
+	user2 := auth.GetUser(context.Background(), "testuser")
 	assert.NotNil(t, user2)
 	assert.Equal(t, "testuser", user2.Spec.Username)
 
 	// Test user not found
-	user3 := auth.GetUser("nonexistent")
+	user3 := auth.GetUser(context.Background(), "nonexistent")
 	assert.Nil(t, user3)
 }
 
@@ -261,7 +261,7 @@ func TestKubeAuth_RefreshUserCache(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify user is in cache
-	user := auth.GetUser("testuser")
+	user := auth.GetUser(context.Background(), "testuser")
 	assert.NotNil(t, user)
 	assert.Equal(t, "testuser", user.Spec.Username)
 }
@@ -330,7 +330,7 @@ func TestKubeAuth_UpdateUser(t *testing.T) {
 	auth.UpdateUser(updatedUser)
 
 	// Verify user is updated in cache
-	cachedUser := auth.GetUser("testuser")
+	cachedUser := auth.GetUser(context.Background(), "testuser")
 	assert.NotNil(t, cachedUser)
 	assert.False(t, cachedUser.Spec.Enabled)
 }
@@ -355,14 +355,14 @@ func TestKubeAuth_DeleteUser(t *testing.T) {
 	auth.userCache.Store("testuser", testUser)
 
 	// Verify user exists
-	user := auth.GetUser("testuser")
+	user := auth.GetUser(context.Background(), "testuser")
 	assert.NotNil(t, user)
 
 	// Delete user
 	auth.DeleteUser("testuser")
 
 	// Verify user is removed from cache
-	user = auth.GetUser("testuser")
+	user = auth.GetUser(context.Background(), "testuser")
 	assert.Nil(t, user)
 }
 

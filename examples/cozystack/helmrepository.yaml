@@ -13,7 +13,8 @@ metadata:
     cozystack.io/description: "Helm repository for KubeFTPd charts"
 spec:
   interval: 10m
-  url: https://rossigee.github.io/kubeftpd
+  url: oci://ghcr.io/rossigee/kubeftpd
+  type: "oci"
   timeout: 60s
 
   # Optional: Verify chart signatures (if available)

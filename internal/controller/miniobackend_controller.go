@@ -122,7 +122,7 @@ func (r *MinioBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // testMinioConnectivity tests connectivity to the MinIO backend
 func (r *MinioBackendReconciler) testMinioConnectivity(ctx context.Context, backend *ftpv1.MinioBackend) error {
 	// Create a MinIO backend instance to test connectivity
-	_, err := backends.NewMinioBackend(backend, r.Client)
+	_, err := backends.NewMinioBackend(ctx, backend, r.Client)
 	if err != nil {
 		return fmt.Errorf("failed to create MinIO backend: %w", err)
 	}
