@@ -119,7 +119,7 @@ jobs:
       - name: Package and push Helm chart to OCI
         run: |
           # Package the Helm chart
-          helm package chart/kubeftpd -d dist
+          helm package charts/kubeftpd -d dist
 
           # Login to OCI registry
           echo "${{ secrets.PAT_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin

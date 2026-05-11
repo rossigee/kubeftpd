@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	corev1 "k8s.io/api/core/v1"
@@ -678,4 +679,65 @@ func TestKubeAuth_UserTypeDefaults(t *testing.T) {
 	authenticated, err = auth.CheckPasswd(nil, "testuser", "wrongpass")
 	assert.NoError(t, err)
 	assert.False(t, authenticated, "User without type should fail with wrong password")
+}
+
+func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = ftpv1.AddToScheme(scheme)
+
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testuser",
+			Namespace: "default",
+		},
+		Spec: ftpv1.UserSpec{
+			Username:      "testuser",
+			Password:      "testpass",
+			Enabled:       true,
+			HomeDirectory: "/test",
+			Backend: ftpv1.BackendReference{
+				Kind: "FilesystemBackend",
+				Name: "test-backend",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(user).
+		Build()
+
+	auth := NewKubeAuth(fakeClient)
+
+	_, err := auth.CheckPasswd(nil, "testuser", "wrongpass")
+	assert.NoError(t, err)
+
+	families, err := prometheus.DefaultGatherer.Gather()
+	assert.NoError(t, err)
+
+	for _, f := range families {
+		switch f.GetName() {
+		case "kubeftpd_auth_failures_total":
+			for _, m := range f.GetMetric() {
+				for _, l := range m.GetLabel() {
+					assert.NotEqualf(t, "username", l.GetName(),
+						"kubeftpd_auth_failures_total must not have username label")
+				}
+			}
+		case "kubeftpd_auth_attempts_total":
+			for _, m := range f.GetMetric() {
+				for _, l := range m.GetLabel() {
+					assert.NotEqualf(t, "username", l.GetName(),
+						"kubeftpd_auth_attempts_total must not have username label")
+				}
+			}
+		case "kubeftpd_user_logins_total":
+			for _, m := range f.GetMetric() {
+				for _, l := range m.GetLabel() {
+					assert.NotEqualf(t, "username", l.GetName(),
+						"kubeftpd_user_logins_total must not have username label")
+				}
+			}
+		}
+	}
 }

@@ -87,7 +87,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	// Reject immediately if the username or source IP is currently locked out.
 	if auth.bruteForce.IsLockedOut(username, clientIP) {
 		recordAuthFailure("locked_out")
-		metrics.RecordUserLogin(username, "locked_out")
+		metrics.RecordUserLogin("locked_out")
 		return false, nil
 	}
 
@@ -99,7 +99,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	if user == nil {
 		logger.Info("User not found", "username", username)
 		auth.bruteForce.RecordFailure(username, clientIP)
-		metrics.RecordUserLogin(username, "user_not_found")
+		metrics.RecordUserLogin("user_not_found")
 		return false, nil
 	}
 
@@ -108,7 +108,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 		logger.Info("User is disabled", "username", username)
 		auth.bruteForce.RecordFailure(username, clientIP)
 		recordAuthFailure("user_disabled")
-		metrics.RecordUserLogin(username, "failure")
+		metrics.RecordUserLogin("failure")
 		return false, nil
 	}
 
@@ -170,13 +170,13 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 		// Store in session-based map using connection identifier
 		sessionID := auth.getSessionID(ctx)
 		auth.setSessionUser(sessionID, username)
-		metrics.RecordUserLogin(username, "success")
+		metrics.RecordUserLogin("success")
 		return true, nil
 	}
 
 	logger.Info("User authentication failed", "username", username)
 	auth.bruteForce.RecordFailure(username, clientIP)
-	metrics.RecordUserLogin(username, "failure")
+	metrics.RecordUserLogin("failure")
 	return false, nil
 }
 
