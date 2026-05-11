@@ -6,90 +6,30 @@ on:
       - master
     paths:
       - 'charts/**'
-  pull_request:
-    branches:
-      - master
-    paths:
-      - 'charts/**'
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  publish-chart:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      packages: write
-      id-token: write
+      contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
       - name: Install Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@v4
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
         with:
-          version: latest
-
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install chart-releaser
-        run: |
-          wget https://github.com/helm/chart-releaser/releases/download/v1.6.0/chart-releaser_1.6.0_linux_amd64.tar.gz
-          tar -xzf chart-releaser_1.6.0_linux_amd64.tar.gz
-          sudo mv cr /usr/local/bin/
-
-      - name: Package and upload charts
-        run: |
-          # Create .cr-release-packages directory
-          mkdir -p .cr-release-packages
-
-          # Package the chart
-          helm package charts/kubeftpd -d .cr-release-packages/
-
-          # Create index.yaml if it doesn't exist
-          if [ ! -f .cr-index/index.yaml ]; then
-            mkdir -p .cr-index
-            helm repo index .cr-index
-          fi
-
-          # Upload to GHCR
-          for chart in .cr-release-packages/*.tgz; do
-            if [ -f "$chart" ]; then
-              echo "Pushing $chart to GHCR..."
-              helm push "$chart" oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/
-            fi
-          done
-
-      - name: Update Helm repository index
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: |
-          # Update the index.yaml for the repository
-          mkdir -p .cr-index
-          helm repo index .cr-index --merge .cr-index/index.yaml
-          echo "Index updated"
-
-      - name: Create GitHub release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: chart-${{ github.run_number }}
-          name: Helm Chart Release ${{ github.run_number }}
-          body: |
-            Automated Helm chart release
-
-            ## Charts Published
-            - kubeftpd ${{ github.run_number }}
-          draft: false
-          prerelease: false
+          charts_dir: charts
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
