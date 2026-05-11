@@ -8,7 +8,7 @@ on:
     branches: [master, develop]
 
 env:
-  GO_VERSION: '1.26.2'
+  GO_VERSION: '1.26.3'
 
 jobs:
   test:
@@ -26,7 +26,7 @@ jobs:
 
       - name: Test
         run: |
-          go test ./internal/ftp ./internal/storage ./cmd -v -cover
+          go test ./internal/ftp ./internal/storage ./cmd -v -cover -coverprofile=coverage.out
 
       - name: Upload coverage
         uses: codecov/codecov-action@v6

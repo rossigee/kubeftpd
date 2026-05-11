@@ -65,7 +65,7 @@ var (
 			Name: "kubeftpd_user_logins_total",
 			Help: "Total user login attempts",
 		},
-		[]string{"username", "result"},
+		[]string{"result"},
 	)
 
 	UserSessionDuration = promauto.NewHistogramVec(
@@ -137,8 +137,8 @@ func RecordFileTransfer(username, direction, backendType string, bytes int64, du
 }
 
 // RecordUserLogin records a user login attempt
-func RecordUserLogin(username, result string) {
-	UserLoginTotal.WithLabelValues(username, result).Inc()
+func RecordUserLogin(result string) {
+	UserLoginTotal.WithLabelValues(result).Inc()
 }
 
 // RecordUserSession records user session metrics

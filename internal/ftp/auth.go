@@ -25,7 +25,7 @@ var (
 			Name: "kubeftpd_auth_attempts_total",
 			Help: "Total number of FTP authentication attempts",
 		},
-		[]string{"username", "method", "result"},
+		[]string{"method", "result"},
 	)
 
 	authFailures = promauto.NewCounterVec(
@@ -33,7 +33,7 @@ var (
 			Name: "kubeftpd_auth_failures_total",
 			Help: "Total number of FTP authentication failures",
 		},
-		[]string{"username", "reason"},
+		[]string{"reason"},
 	)
 
 	secretAccessErrors = promauto.NewCounterVec(
@@ -52,6 +52,14 @@ var (
 		[]string{"namespace", "username", "secret_name"},
 	)
 )
+
+func recordAuthAttempt(method, result string) {
+	authAttempts.WithLabelValues(method, result).Inc()
+}
+
+func recordAuthFailure(reason string) {
+	authFailures.WithLabelValues(reason).Inc()
+}
 
 // KubeAuth implements FTP authentication against Kubernetes User CRDs
 type KubeAuth struct {
@@ -78,8 +86,8 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 
 	// Reject immediately if the username or source IP is currently locked out.
 	if auth.bruteForce.IsLockedOut(username, clientIP) {
-		authFailures.WithLabelValues(username, "locked_out").Inc()
-		metrics.RecordUserLogin(username, "locked_out")
+		recordAuthFailure("locked_out")
+		metrics.RecordUserLogin("locked_out")
 		return false, nil
 	}
 
@@ -91,7 +99,7 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	if user == nil {
 		logger.Info("User not found", "username", username)
 		auth.bruteForce.RecordFailure(username, clientIP)
-		metrics.RecordUserLogin(username, "user_not_found")
+		metrics.RecordUserLogin("user_not_found")
 		return false, nil
 	}
 
@@ -99,8 +107,8 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	if !user.Spec.Enabled {
 		logger.Info("User is disabled", "username", username)
 		auth.bruteForce.RecordFailure(username, clientIP)
-		authFailures.WithLabelValues(username, "user_disabled").Inc()
-		metrics.RecordUserLogin(username, "failure")
+		recordAuthFailure("user_disabled")
+		metrics.RecordUserLogin("failure")
 		return false, nil
 	}
 
@@ -117,30 +125,30 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 	case "anonymous":
 		// RFC 1635: anonymous FTP allows any password (typically email)
 		authenticated = true
-		authAttempts.WithLabelValues(username, "anonymous", "success").Inc()
+		recordAuthAttempt("anonymous", "success")
 	case "admin":
 		// Admin users must authenticate against secret
 		authenticated, err = auth.checkAdminPassword(authCtx, user, password)
 		if err != nil {
 			logger.Error(err, "Failed to check admin password", "username", username)
-			authFailures.WithLabelValues(username, "secret_error").Inc()
-			authAttempts.WithLabelValues(username, "admin", "failure").Inc()
+			recordAuthFailure("secret_error")
+			recordAuthAttempt("admin", "failure")
 			return false, nil
 		}
 		if authenticated {
-			authAttempts.WithLabelValues(username, "admin", "success").Inc()
+			recordAuthAttempt("admin", "success")
 		} else {
 			logger.Info("Invalid password for admin user", "username", username)
-			authFailures.WithLabelValues(username, "invalid_password").Inc()
-			authAttempts.WithLabelValues(username, "admin", "failure").Inc()
+			recordAuthFailure("invalid_password")
+			recordAuthAttempt("admin", "failure")
 		}
 	default: // "regular"
 		// Regular users use existing password validation logic
 		authenticated, err = auth.checkRegularUserPassword(authCtx, user, password)
 		if err != nil {
 			logger.Error(err, "Failed to check password for user", "username", username)
-			authFailures.WithLabelValues(username, "secret_error").Inc()
-			authAttempts.WithLabelValues(username, "regular", "failure").Inc()
+			recordAuthFailure("secret_error")
+			recordAuthAttempt("regular", "failure")
 			return false, nil
 		}
 		if authenticated {
@@ -148,11 +156,11 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 			if user.Spec.PasswordSecret != nil {
 				method = "secret"
 			}
-			authAttempts.WithLabelValues(username, method, "success").Inc()
+			recordAuthAttempt(method, "success")
 		} else {
 			logger.Info("Invalid password for user", "username", username)
-			authFailures.WithLabelValues(username, "invalid_password").Inc()
-			authAttempts.WithLabelValues(username, "regular", "failure").Inc()
+			recordAuthFailure("invalid_password")
+			recordAuthAttempt("regular", "failure")
 		}
 	}
 
@@ -162,13 +170,13 @@ func (auth *KubeAuth) CheckPasswd(ctx *server.Context, username, password string
 		// Store in session-based map using connection identifier
 		sessionID := auth.getSessionID(ctx)
 		auth.setSessionUser(sessionID, username)
-		metrics.RecordUserLogin(username, "success")
+		metrics.RecordUserLogin("success")
 		return true, nil
 	}
 
 	logger.Info("User authentication failed", "username", username)
 	auth.bruteForce.RecordFailure(username, clientIP)
-	metrics.RecordUserLogin(username, "failure")
+	metrics.RecordUserLogin("failure")
 	return false, nil
 }
 
