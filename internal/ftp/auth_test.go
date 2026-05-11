@@ -715,9 +715,13 @@ func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
 	families, err := prometheus.DefaultGatherer.Gather()
 	assert.NoError(t, err)
 
+	var foundFailures, foundAttempts, foundLogins bool
+
 	for _, f := range families {
 		switch f.GetName() {
 		case "kubeftpd_auth_failures_total":
+			foundFailures = true
+			assert.NotEmpty(t, f.GetMetric(), "kubeftpd_auth_failures_total should have metrics")
 			for _, m := range f.GetMetric() {
 				for _, l := range m.GetLabel() {
 					assert.NotEqualf(t, "username", l.GetName(),
@@ -725,6 +729,8 @@ func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
 				}
 			}
 		case "kubeftpd_auth_attempts_total":
+			foundAttempts = true
+			assert.NotEmpty(t, f.GetMetric(), "kubeftpd_auth_attempts_total should have metrics")
 			for _, m := range f.GetMetric() {
 				for _, l := range m.GetLabel() {
 					assert.NotEqualf(t, "username", l.GetName(),
@@ -732,6 +738,8 @@ func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
 				}
 			}
 		case "kubeftpd_user_logins_total":
+			foundLogins = true
+			assert.NotEmpty(t, f.GetMetric(), "kubeftpd_user_logins_total should have metrics")
 			for _, m := range f.GetMetric() {
 				for _, l := range m.GetLabel() {
 					assert.NotEqualf(t, "username", l.GetName(),
@@ -740,4 +748,8 @@ func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
 			}
 		}
 	}
+
+	assert.True(t, foundFailures, "kubeftpd_auth_failures_total must be present in gathered metrics")
+	assert.True(t, foundAttempts, "kubeftpd_auth_attempts_total must be present in gathered metrics")
+	assert.True(t, foundLogins, "kubeftpd_user_logins_total must be present in gathered metrics")
 }
