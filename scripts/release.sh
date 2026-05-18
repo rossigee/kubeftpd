@@ -60,114 +60,93 @@ function get_current_version() {
     git tag --sort=-version:refname | head -1 | tr -d '\n'
 }
 
+function sed_replace() {
+    local file="$1"
+    local pattern="$2"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "$pattern" "$file"
+    else
+        sed -i "$pattern" "$file"
+    fi
+}
+
 function update_versions() {
-    local old_version="$1"
-    local new_version="$2"
-    local old_version_no_v="${old_version#v}"
+    local new_version="$1"
     local new_version_no_v="${new_version#v}"
 
     cd "$ROOT_DIR"
 
-    log_info "Updating version from $old_version to $new_version"
+    log_info "Updating version to $new_version"
 
-    # Chart.yaml - specific version lines
-    if [[ -f "chart/kubeftpd/Chart.yaml" ]]; then
-        log_info "Updating chart/kubeftpd/Chart.yaml"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^version: $old_version_no_v$/version: $new_version_no_v/" "chart/kubeftpd/Chart.yaml"
-            sed -i '' "s/^appVersion: \"$old_version\"$/appVersion: \"$new_version\"/" "chart/kubeftpd/Chart.yaml"
-        else
-            sed -i "s/^version: $old_version_no_v$/version: $new_version_no_v/" "chart/kubeftpd/Chart.yaml"
-            sed -i "s/^appVersion: \"$old_version\"$/appVersion: \"$new_version\"/" "chart/kubeftpd/Chart.yaml"
-        fi
-    fi
-
-    # Helm values.yaml - image tag
-    if [[ -f "chart/kubeftpd/values.yaml" ]]; then
-        log_info "Updating chart/kubeftpd/values.yaml"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/tag: \"$old_version\"/tag: \"$new_version\"/" "chart/kubeftpd/values.yaml"
-        else
-            sed -i "s/tag: \"$old_version\"/tag: \"$new_version\"/" "chart/kubeftpd/values.yaml"
-        fi
+    # cmd/main.go - version constant
+    if [[ -f "cmd/main.go" ]]; then
+        log_info "Updating cmd/main.go"
+        sed_replace "cmd/main.go" "s/version = \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"/version = \"$new_version\"/"
     fi
 
     # Makefile - version
     if [[ -f "Makefile" ]]; then
         log_info "Updating Makefile"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/^VERSION ?= $old_version$/VERSION ?= $new_version/" "Makefile"
-        else
-            sed -i "s/^VERSION ?= $old_version$/VERSION ?= $new_version/" "Makefile"
-        fi
+        sed_replace "Makefile" "s/^VERSION ?= v[0-9]\+\.[0-9]\+\.[0-9]\+$/VERSION ?= $new_version/"
     fi
 
-    # Dockerfile - version label (if it exists)
+    # Dockerfile - version ARG
     if [[ -f "Dockerfile" ]]; then
         log_info "Updating Dockerfile"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/ARG VERSION=$old_version$/ARG VERSION=$new_version/" "Dockerfile"
-        else
-            sed -i "s/ARG VERSION=$old_version$/ARG VERSION=$new_version/" "Dockerfile"
-        fi
+        sed_replace "Dockerfile" "s/ARG VERSION=v[0-9]\+\.[0-9]\+\.[0-9]\+/ARG VERSION=$new_version/"
     fi
 
-    # Production kustomization - image tags
+    # Legacy chart: chart/kubeftpd/Chart.yaml
+    if [[ -f "chart/kubeftpd/Chart.yaml" ]]; then
+        log_info "Updating chart/kubeftpd/Chart.yaml"
+        sed_replace "chart/kubeftpd/Chart.yaml" "s/^version: [0-9]\+\.[0-9]\+\.[0-9]\+$/version: $new_version_no_v/"
+        sed_replace "chart/kubeftpd/Chart.yaml" "s/^appVersion: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"$/appVersion: \"$new_version\"/"
+    fi
+
+    # CI-relevant chart: charts/kubeftpd/Chart.yaml
+    if [[ -f "charts/kubeftpd/Chart.yaml" ]]; then
+        log_info "Updating charts/kubeftpd/Chart.yaml"
+        sed_replace "charts/kubeftpd/Chart.yaml" "s/^version: [0-9]\+\.[0-9]\+\.[0-9]\+$/version: $new_version_no_v/"
+        sed_replace "charts/kubeftpd/Chart.yaml" "s/^appVersion: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"$/appVersion: \"$new_version\"/"
+    fi
+
+    # Legacy Helm values.yaml - image tag
+    if [[ -f "chart/kubeftpd/values.yaml" ]]; then
+        log_info "Updating chart/kubeftpd/values.yaml"
+        sed_replace "chart/kubeftpd/values.yaml" "s/tag: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"/tag: \"$new_version\"/"
+    fi
+
+    # config/manager/kustomization.yaml
+    if [[ -f "config/manager/kustomization.yaml" ]]; then
+        log_info "Updating config/manager/kustomization.yaml"
+        sed_replace "config/manager/kustomization.yaml" "s/newTag: v[0-9]\+\.[0-9]\+\.[0-9]\+/newTag: $new_version/"
+    fi
+
+    # config/production/kustomization.yaml
     if [[ -f "config/production/kustomization.yaml" ]]; then
         log_info "Updating config/production/kustomization.yaml"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/newTag: $old_version$/newTag: $new_version/" "config/production/kustomization.yaml"
-        else
-            sed -i "s/newTag: $old_version$/newTag: $new_version/" "config/production/kustomization.yaml"
-        fi
+        sed_replace "config/production/kustomization.yaml" "s/newTag: v[0-9]\+\.[0-9]\+\.[0-9]\+/newTag: $new_version/"
     fi
 
     # README.md - container image examples
     if [[ -f "README.md" ]]; then
         log_info "Updating README.md"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/ghcr.io\/rossigee\/kubeftpd:$old_version/ghcr.io\/rossigee\/kubeftpd:$new_version/g" "README.md"
-            sed -i '' "s/controller.image.tag=$old_version/controller.image.tag=$new_version/g" "README.md"
-        else
-            sed -i "s/ghcr.io\/rossigee\/kubeftpd:$old_version/ghcr.io\/rossigee\/kubeftpd:$new_version/g" "README.md"
-            sed -i "s/controller.image.tag=$old_version/controller.image.tag=$new_version/g" "README.md"
-        fi
+        sed_replace "README.md" "s/ghcr.io\/rossigee\/kubeftpd:v[0-9]\+\.[0-9]\+\.[0-9]\+/ghcr.io\/rossigee\/kubeftpd:$new_version/g"
+        sed_replace "README.md" "s/controller.image.tag=v[0-9]\+\.[0-9]\+\.[0-9]\+/controller.image.tag=$new_version/g"
     fi
 
-    # Chart README.md (if it exists)
+    # Legacy chart README.md
     if [[ -f "chart/kubeftpd/README.md" ]]; then
         log_info "Updating chart/kubeftpd/README.md"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/rossigee\/kubeftpd:$old_version/rossigee\/kubeftpd:$new_version/g" "chart/kubeftpd/README.md"
-        else
-            sed -i "s/rossigee\/kubeftpd:$old_version/rossigee\/kubeftpd:$new_version/g" "chart/kubeftpd/README.md"
-        fi
+        sed_replace "chart/kubeftpd/README.md" "s/rossigee\/kubeftpd:v[0-9]\+\.[0-9]\+\.[0-9]\+/rossigee\/kubeftpd:$new_version/g"
     fi
 
-    # main.go - version constant
-    if [[ -f "cmd/main.go" ]]; then
-        log_info "Updating cmd/main.go"
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/version = \"$old_version\"/version = \"$new_version\"/" "cmd/main.go"
-        else
-            sed -i "s/version = \"$old_version\"/version = \"$new_version\"/" "cmd/main.go"
-        fi
-    fi
-
-    # Release manifests directory (rename files)
+    # Release manifests directory - update contents only
     if [[ -d "releases" ]]; then
-        for file in releases/*"${old_version}"*; do
+        log_info "Checking releases/ directory for version references"
+        for file in releases/*; do
             if [[ -f "$file" ]]; then
-                new_file="${file//$old_version/$new_version}"
-                log_info "Renaming $file to $new_file"
-                mv "$file" "$new_file"
-
-                # Update version references inside the file
-                if [[ "$OSTYPE" == "darwin"* ]]; then
-                    sed -i '' "s/$old_version/$new_version/g" "$new_file"
-                else
-                    sed -i "s/$old_version/$new_version/g" "$new_file"
-                fi
+                sed_replace "$file" "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/$new_version/g"
             fi
         done
     fi
@@ -193,7 +172,7 @@ function commit_changes() {
 - Update Helm chart version and appVersion
 - Update container image tags
 - Update documentation examples
-- Rename release manifests for new version"
+- Update release manifests for new version"
 
     log_info "Changes committed. Ready to tag and push:"
     echo "  git tag $new_version"
@@ -232,7 +211,7 @@ function main() {
     fi
 
     # Update versions
-    update_versions "$current_version" "$new_version"
+    update_versions "$new_version"
 
     # Show changes
     show_changes

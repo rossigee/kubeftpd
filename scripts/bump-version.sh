@@ -20,22 +20,17 @@ function log_info() {
 }
 
 function usage() {
-    echo "Usage: $0 [patch|minor|major] [OPTIONS]"
+    echo "Usage: $0 [patch|minor|major]"
     echo ""
     echo "Arguments:"
     echo "  patch    Bump patch version (e.g., v0.5.0 -> v0.5.1)"
     echo "  minor    Bump minor version (e.g., v0.5.0 -> v0.6.0)"
     echo "  major    Bump major version (e.g., v0.5.0 -> v1.0.0)"
     echo ""
-    echo "Options:"
-    echo "  --dry-run    Show what would be changed without making changes"
-    echo "  --force      Skip version consistency checks"
-    echo "  --help       Show this help message"
-    echo ""
     echo "Examples:"
     echo "  $0 patch                # Bump patch version"
-    echo "  $0 minor --dry-run      # Show what minor bump would do"
-    echo "  $0 major --force        # Force major version bump"
+    echo "  $0 minor                # Bump minor version"
+    echo "  $0 major                # Bump major version"
     echo ""
     exit 1
 }
@@ -87,33 +82,23 @@ function bump_version() {
 
 function main() {
     local bump_type=""
-    local release_args=()
 
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            patch|minor|major)
-                bump_type="$1"
-                shift
-                ;;
-            --dry-run|--force)
-                release_args+=("$1")
-                shift
-                ;;
-            --help|-h)
-                usage
-                ;;
-            *)
-                echo "Unknown argument: $1"
-                usage
-                ;;
-        esac
-    done
-
-    if [[ -z "$bump_type" ]]; then
-        echo "Bump type is required (patch, minor, or major)"
+    if [[ $# -ne 1 ]]; then
         usage
     fi
+
+    case $1 in
+        patch|minor|major)
+            bump_type="$1"
+            ;;
+        --help|-h)
+            usage
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            usage
+            ;;
+    esac
 
     # Get current version
     local current_version
@@ -131,7 +116,7 @@ function main() {
     log_info "Bumping $bump_type version: $current_version -> $new_version"
 
     # Call the main release script
-    exec "$SCRIPT_DIR/release.sh" "${release_args[@]}" "$new_version"
+    exec "$SCRIPT_DIR/release.sh" "$new_version"
 }
 
 main "$@"
