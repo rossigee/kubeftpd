@@ -745,8 +745,13 @@ func (driver *KubeDriver) ensureUserInitializedWithContext(ctx *server.Context) 
 		logger.Info("ensureUserInitialized: initializing storage",
 			"username", username, "backend_kind", user.Spec.Backend.Kind, "backend_name", user.Spec.Backend.Name)
 
+		// Create a context with timeout for initialization to prevent hangs
+		// Use background context as base to avoid cancellation from session closure
+		initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer initCancel()
+
 		var err error
-		driver.storageImpl, err = storage.NewStorage(driver.sessionCtx, user, driver.client)
+		driver.storageImpl, err = storage.NewStorage(initCtx, user, driver.client)
 		if err != nil {
 			logger.Error(err, "ensureUserInitialized failed: storage initialization error", "username", username)
 			return fmt.Errorf("failed to initialize storage for user %s: %w", user.Spec.Username, err)

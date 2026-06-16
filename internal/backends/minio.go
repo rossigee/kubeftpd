@@ -25,6 +25,10 @@ type minioBackendImpl struct {
 
 // newMinioBackendImpl creates a new MinIO backend implementation
 func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeClient client.Client) (MinioBackend, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context cannot be nil")
+	}
+
 	// Get credentials
 	accessKey := backend.Spec.Credentials.AccessKeyID
 	secretKey := backend.Spec.Credentials.SecretAccessKey
@@ -90,7 +94,13 @@ func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeC
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
 	}
 
-	// Test connection
+	// Test connection - check context is still valid before attempting
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context cancelled before MinIO connection test")
+	default:
+	}
+
 	_, err = minioClient.BucketExists(ctx, backend.Spec.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MinIO bucket %s: %w", backend.Spec.Bucket, err)

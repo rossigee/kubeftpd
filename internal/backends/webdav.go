@@ -50,6 +50,10 @@ type webDavBackendImpl struct {
 
 // newWebDavBackendImpl creates a new WebDAV backend implementation
 func newWebDavBackendImpl(ctx context.Context, backend *ftpv1.WebDavBackend, kubeClient client.Client) (WebDavBackend, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context cannot be nil")
+	}
+
 	// Get credentials
 	username := backend.Spec.Credentials.Username
 	password := backend.Spec.Credentials.Password
