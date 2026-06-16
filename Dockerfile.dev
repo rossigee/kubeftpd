@@ -22,7 +22,7 @@ RUN go install github.com/cosmtrek/air@latest
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Install golangci-lint
-RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.9.0
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.12.2
 
 # Install gosec
 RUN go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
