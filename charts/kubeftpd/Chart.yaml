@@ -3,8 +3,8 @@ apiVersion: v2
 name: kubeftpd
 description: A Helm chart for KubeFTPd - Kubernetes-native FTP service
 type: application
-version: 0.8.0
-appVersion: "v0.8.0"
+version: 0.9.0
+appVersion: "v0.9.0"
 keywords:
   - ftp
   - file-transfer
