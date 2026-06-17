@@ -7,10 +7,19 @@ metadata:
     {{- include "kubeftpd.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.ftp.service.type }}
+  {{- if .Values.ftp.service.allocateLoadBalancerNodePorts }}
+  allocateLoadBalancerNodePorts: {{ .Values.ftp.service.allocateLoadBalancerNodePorts }}
+  {{- end }}
+  {{- if .Values.ftp.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.ftp.service.externalTrafficPolicy }}
+  {{- end }}
   ports:
     - port: {{ .Values.ftp.service.port }}
       targetPort: {{ .Values.ftp.service.port }}
       protocol: TCP
       name: ftp
+    {{- with .Values.ftp.service.additionalPorts }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
