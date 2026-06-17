@@ -54,6 +54,17 @@ func isFileNotFoundError(err error) bool {
 		strings.Contains(errStr, "does not exist")
 }
 
+// wrapStorageError wraps storage/backend errors with a user-friendly message
+// to avoid leaking implementation details to the FTP client. The original error
+// is logged for debugging; the returned error provides a safe message for the client.
+func wrapStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Return a generic message that doesn't expose backend configuration or credentials
+	return fmt.Errorf("storage system unavailable")
+}
+
 // isTracingEnabled returns true if OpenTelemetry is configured
 func isTracingEnabled() bool {
 	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" ||
@@ -379,7 +390,7 @@ func (driver *KubeDriver) Stat(ctx *server.Context, path string) (os.FileInfo, e
 
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "Stat failed during user initialization", "username", username, "path", path)
-		return nil, err
+		return nil, wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
@@ -411,7 +422,7 @@ func (driver *KubeDriver) ListDir(ctx *server.Context, path string, callback fun
 
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "LIST failed during user initialization", "username", username, "path", path)
-		return err
+		return wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
@@ -436,7 +447,7 @@ func (driver *KubeDriver) DeleteDir(ctx *server.Context, path string) error {
 
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "RMDIR failed during user initialization", "username", username, "path", path)
-		return err
+		return wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
@@ -461,7 +472,7 @@ func (driver *KubeDriver) DeleteFile(ctx *server.Context, path string) error {
 
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "DELETE failed during user initialization", "username", username, "path", path)
-		return err
+		return wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
@@ -492,7 +503,7 @@ func (driver *KubeDriver) Rename(ctx *server.Context, fromPath, toPath string) e
 
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "RENAME failed during user initialization", "username", username, "from_path", fromPath, "to_path", toPath)
-		return err
+		return wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions for both paths and get resolved paths
@@ -527,7 +538,7 @@ func (driver *KubeDriver) MakeDir(ctx *server.Context, path string) error {
 	logger.Info("FTP MKDIR operation", "username", username, "path", path)
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
 		logger.Error(err, "MKDIR failed during user initialization", "username", username, "path", path)
-		return err
+		return wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
@@ -572,7 +583,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
 		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
-		return 0, nil, err
+		return 0, nil, wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
@@ -658,7 +669,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
 		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
-		return 0, err
+		return 0, wrapStorageError(err)
 	}
 
 	// Validate chroot restrictions and get resolved path
