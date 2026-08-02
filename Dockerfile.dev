@@ -1,7 +1,7 @@
 # Development Dockerfile for KubeFTPd
 # This Dockerfile is optimized for development with live reloading
 
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.26.5
 FROM golang:${GO_VERSION}-alpine AS development
 
 # Install development tools

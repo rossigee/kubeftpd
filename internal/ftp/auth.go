@@ -244,7 +244,7 @@ func (auth *KubeAuth) GetUser(ctx context.Context, username string) *ftpv1.User 
 // RefreshUserCache refreshes the user cache from Kubernetes
 func (auth *KubeAuth) RefreshUserCache(ctx context.Context) error {
 	logger := getLogger()
-	logger.Info("Refreshing user cache")
+	logger.V(1).Info("Refreshing user cache")
 
 	userList := &ftpv1.UserList{}
 	if err := auth.client.List(ctx, userList); err != nil {
@@ -263,7 +263,7 @@ func (auth *KubeAuth) RefreshUserCache(ctx context.Context) error {
 		auth.userCache.Store(user.Spec.Username, userCopy)
 	}
 
-	logger.Info("User cache refreshed", "user_count", len(userList.Items))
+	logger.V(1).Info("User cache refreshed", "user_count", len(userList.Items))
 	return nil
 }
 
