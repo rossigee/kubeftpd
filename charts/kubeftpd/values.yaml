@@ -30,6 +30,9 @@ controller:
     seccompProfile:
       type: RuntimeDefault
 
+  # Log level (debug, info, warn, error)
+  logLevel: "info"
+
   # Node selector, tolerations, and affinity
   nodeSelector: {}
   tolerations: []

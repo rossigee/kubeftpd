@@ -32,6 +32,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -154,9 +155,16 @@ func parseFlags() (*appConfig, zap.Options) {
 	flag.BoolVar(&config.enableProfiling, "enable-profiling", false, "Enable Go profiling endpoints (/debug/pprof/)")
 	flag.StringVar(&config.profilingAddr, "profiling-addr", "127.0.0.1:6060", "Address for pprof endpoints (loopback only recommended)")
 
-	opts := zap.Options{Development: true}
+	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	if envLogLevel := os.Getenv("LOG_LEVEL"); envLogLevel != "" {
+		var level zapcore.Level
+		if err := level.Set(envLogLevel); err == nil {
+			opts.Level = &level
+		}
+	}
 
 	return config, opts
 }

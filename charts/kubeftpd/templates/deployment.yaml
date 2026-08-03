@@ -67,6 +67,8 @@ spec:
               value: "{{ .Values.ftp.settings.idleTimeout }}"
             - name: FTP_MAX_CONNECTIONS
               value: "{{ .Values.ftp.settings.maxConnections }}"
+            - name: LOG_LEVEL
+              value: "{{ .Values.controller.logLevel }}"
           livenessProbe:
             httpGet:
               path: /healthz
