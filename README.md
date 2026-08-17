@@ -52,7 +52,7 @@ Pre-built container images are available from GitHub Container Registry:
 ghcr.io/rossigee/kubeftpd:latest
 
 # Specific version
-ghcr.io/rossigee/kubeftpd:v0.7.0
+ghcr.io/rossigee/kubeftpd:v0.9.4
 ```
 
 **Supported architectures:**

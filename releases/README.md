@@ -1,10 +1,10 @@
-# KubeFTPd v0.1.0 Release Artifacts
+# KubeFTPd v0.9.4 Release Artifacts
 
-This directory contains the release artifacts for KubeFTPd v0.1.0.
+This directory contains the release artifacts for KubeFTPd v0.9.4.
 
 ## Installation Files
 
-### install_v0.1.0.yaml
+### install_v0.9.4.yaml
 Complete installation manifests for KubeFTPd including:
 - CustomResourceDefinitions (CRDs) for User, MinioBackend, WebDavBackend, FilesystemBackend
 - RBAC configuration (ClusterRole, ClusterRoleBinding, ServiceAccount)
@@ -14,10 +14,10 @@ Complete installation manifests for KubeFTPd including:
 
 **Installation:**
 ```bash
-kubectl apply -f install_v0.1.0.yaml
+kubectl apply -f install_v0.9.4.yaml
 ```
 
-### production_v0.1.0.yaml
+### production_v0.9.4.yaml
 Production-optimized deployment with:
 - Enhanced resource limits and requests
 - AWS Network Load Balancer annotations
@@ -26,10 +26,10 @@ Production-optimized deployment with:
 
 **Installation:**
 ```bash
-kubectl apply -f production_v0.1.0.yaml
+kubectl apply -f production_v0.9.4.yaml
 ```
 
-### samples_v0.1.0.yaml
+### samples_v0.9.4.yaml
 Sample Custom Resource manifests:
 - MinioBackend example
 - WebDAVBackend example
@@ -38,14 +38,14 @@ Sample Custom Resource manifests:
 
 **Installation:**
 ```bash
-kubectl apply -f samples_v0.1.0.yaml
+kubectl apply -f samples_v0.9.4.yaml
 ```
 
 ## Quick Start
 
 1. Install KubeFTPd:
    ```bash
-   kubectl apply -f install_v0.1.0.yaml
+   kubectl apply -f install_v0.9.4.yaml
    ```
 
 2. Wait for deployment:
@@ -55,7 +55,7 @@ kubectl apply -f samples_v0.1.0.yaml
 
 3. Apply sample configurations:
    ```bash
-   kubectl apply -f samples_v0.1.0.yaml
+   kubectl apply -f samples_v0.9.4.yaml
    ```
 
 4. Check FTP service status:

@@ -53,7 +53,7 @@ import (
 
 var (
 	// Version information - set during build
-	version = "v0.8.1"
+	version = "v0.9.4"
 	commit  = "unknown"
 	date    = "unknown"
 
