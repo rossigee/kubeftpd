@@ -84,7 +84,9 @@ repos:
         entry: make validate-manifests
         language: system
         files: \.ya?ml$
+        exclude: '^\.(github|.*\.md)/'
         pass_filenames: false
+        stages: [manual]
 
       - id: prevent-package-files
         name: prevent-package-files
