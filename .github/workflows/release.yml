@@ -6,14 +6,23 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+' # Trigger on tags with semantic versioning
 
+permissions:
+  contents: read
+
 env:
   GO_VERSION: '1.27.3'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Full CI on the tagged commit. Nothing is published unless these pass.
+  ci:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: Build and Release
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
@@ -22,8 +31,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -40,22 +47,19 @@ jobs:
           driver-opts: |
             network=host
 
-      - name: Install tools
+      - name: Install kustomize
         run: |
-          curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
-          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
           make kustomize
 
-      - name: Test and Build
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
-          make manifests generate fmt vet
-          make test
-          make lint
-          make build build-kubeftpd
-
-      - name: Security scan (non-blocking)
-        run: |
-          make security-scan || echo "Security scan completed with expected issues"
+          awk -v v="## [$VERSION]" 'index($0, v) == 1 {found=1; next} /^## \[/ {found=0} found' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
 
       - name: Build release binaries
         run: |
@@ -68,14 +72,15 @@ jobs:
           GOOS=darwin GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/binaries/kubeftpd-darwin-amd64 cmd/main.go
           GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/binaries/kubeftpd-darwin-arm64 cmd/main.go
 
-          cd dist/binaries && sha256sum * > checksums.txt
+          cd dist/binaries && sha256sum ./* > checksums.txt
 
       - name: Generate manifests
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
         run: |
           mkdir -p dist
           cat config/crd/bases/*.yaml > dist/crds.yaml
-          cd config/manager && ../../bin/kustomize edit set image \
-            controller=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          cd config/manager && ../../bin/kustomize edit set image controller="$IMAGE"
           ../../bin/kustomize build ../default > ../../dist/kubeftpd.yaml
 
       - name: Login to Container Registry
@@ -85,16 +90,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.PAT_TOKEN }}
 
-      - name: Verify Docker buildx
-        run: |
-          docker buildx version
-          docker buildx ls
-
       - name: Set build date
         id: date
-        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
+      - name: Build and push image
         uses: docker/build-push-action@v7
         timeout-minutes: 40
         with:
@@ -114,39 +114,24 @@ jobs:
       - name: Setup Helm
         uses: azure/setup-helm@v5
         with:
-          version: 'latest'
+          version: v3.21.0
 
       - name: Package and push Helm chart to OCI
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          ACTOR: ${{ github.actor }}
         run: |
-          # Package the Helm chart
           helm package charts/kubeftpd -d dist
+          printf '%s' "$PAT_TOKEN" | helm registry login "$REGISTRY" -u "$ACTOR" --password-stdin
+          helm push dist/kubeftpd-*.tgz "oci://$REGISTRY/$(printf '%s' "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')/charts"
+          helm registry logout "$REGISTRY"
 
-          # Login to OCI registry
-          echo "${{ secrets.PAT_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
-
-          # Push chart to OCI registry
-          helm push dist/kubeftpd-*.tgz oci://${{ env.REGISTRY }}/$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')/charts
-
-          # Logout
-          helm registry logout ${{ env.REGISTRY }}
-
-      - name: Generate changelog
-        run: |
-          if git describe --tags --abbrev=0 HEAD~1 >/dev/null 2>&1; then
-            PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1)
-            echo "## Changes since $PREVIOUS_TAG" > CHANGELOG.md
-            git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
-          else
-            echo "## Release ${{ github.ref_name }}" > CHANGELOG.md
-            echo "KubeFTPd Kubernetes FTP service" >> CHANGELOG.md
-          fi
-
-      - name: Create Release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          body_path: CHANGELOG.md
+          body_path: RELEASE_NOTES.md
           files: |
             dist/crds.yaml
             dist/kubeftpd.yaml
