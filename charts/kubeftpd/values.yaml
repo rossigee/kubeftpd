@@ -1,23 +1,33 @@
-# Default values for kubeftpd Helm chart
+---
+# Default values for kubeftpd.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
 
-# Controller configuration
+# Global configuration
+global:
+  # Image registry for all components
+  imageRegistry: ""
+
+# KubeFTPd controller configuration
 controller:
+  # Controller image configuration
   image:
     registry: ghcr.io
     repository: rossigee/kubeftpd
-    tag: "latest"
+    tag: "v0.9.4"
     pullPolicy: IfNotPresent
+    pullSecrets: []
 
-  replicas: 1
-
+  # Resource limits and requests
   resources:
     limits:
-      cpu: 200m
+      cpu: 500m
       memory: 128Mi
     requests:
-      cpu: 50m
+      cpu: 100m
       memory: 64Mi
 
+  # Security context
   securityContext:
     allowPrivilegeEscalation: false
     runAsNonRoot: true
@@ -26,125 +36,250 @@ controller:
       drop:
         - ALL
       add:
-        - NET_BIND_SERVICE
+        - NET_BIND_SERVICE  # Allow binding to privileged ports (< 1024) as non-root
     seccompProfile:
       type: RuntimeDefault
+
+  replicas: 1
 
   # Log level (debug, info, warn, error)
   logLevel: "info"
 
-  # Node selector, tolerations, and affinity
+  # Node selector and tolerations
   nodeSelector: {}
   tolerations: []
   affinity: {}
 
-# FTP service configuration
+  # Service account configuration
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  # RBAC configuration
+  rbac:
+    create: true
+
+  # HTTP server configuration (metrics, health, status)
+  http:
+    enabled: true
+    service:
+      port: 8080
+      annotations: {}
+    serviceMonitor:
+      enabled: false
+      additionalLabels: {}
+      interval: 30s
+      scrapeTimeout: 10s
+
+  # Health probes
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8080
+    initialDelaySeconds: 15
+    periodSeconds: 20
+
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# FTP Server configuration
 ftp:
+  # Combined FTP service configuration (control + passive ports)
   service:
-    type: ClusterIP
-    port: 21
+    type: LoadBalancer
+    port: 21  # Changed from 2121 to standard FTP port
+    bindAddress: "0.0.0.0"
+    annotations: {}
+    loadBalancerIP: ""
+    loadBalancerSourceRanges: []
+    # Passive port range configuration (combined in single service)
     passivePortRange:
       min: 10000
-      max: 10004
+      max: 10019  # 20 ports should be adequate
 
+  # Gateway API support (alternative to LoadBalancer)
+  gateway:
+    enabled: false
+    gatewayName: ""  # Reference to existing Gateway resource name
+    # If gatewayName is empty, create a new Gateway
+    create: true
+    annotations: {}
+    labels: {}
+    # Gateway configuration (when create: true)
+    config:
+      gatewayClassName: ""  # Gateway class (e.g., "cilium", "istio", "nginx-gateway")
+      listeners:
+        # FTP control port listener
+        - name: ftp-control
+          port: 21
+          protocol: TCP
+          allowedRoutes:
+            namespaces:
+              from: Same
+        # FTP passive data ports listeners
+        # Note: Gateway API requires individual listeners per port
+        - name: ftp-passive
+          port: 10000
+          protocol: TCP
+          allowedRoutes:
+            namespaces:
+              from: Same
+      # External IP configuration for Gateway
+      addresses: []
+      # Example:
+      # - type: IPAddress
+      #   value: "10.0.0.1"
+
+  # Legacy passive configuration (deprecated - use service.passivePortRange instead)
+  passive:
+    enabled: false  # Disabled - ports now combined in main service
+    service:
+      type: LoadBalancer
+      portRange:
+        min: 10000
+        max: 10019
+      annotations: {}
+      loadBalancerIP: ""
+      loadBalancerSourceRanges: []
+
+  # FTP server settings
   settings:
     welcomeMessage: "Welcome to KubeFTPd"
     idleTimeout: 300
-    maxConnections: 50
+    maxConnections: 100
 
-# Storage backends
+# Storage backends configuration
 backends:
+  # Filesystem backend configuration
   filesystem:
-    enabled: true
-    instances: []
-      # Example:
-      # - name: default-storage
-      #   basePath: /data
-      #   readOnly: false
-      #   fileMode: "0644"
-      #   dirMode: "0755"
-      #   maxFileSize: 104857600  # 100MB
-      #   pvc:
-      #     enabled: true
-      #     name: kubeftpd-storage
-      #     size: 5Gi
-      #     accessModes:
-      #       - ReadWriteOnce
-
-  webdav:
     enabled: false
     instances: []
+    # Example:
+    # - name: local-storage
+    #   basePath: /data
+    #   readOnly: false
+    #   fileMode: "0644"
+    #   dirMode: "0755"
+    #   maxFileSize: 104857600  # 100MB
+    #   pvc:
+    #     enabled: true
+    #     name: kubeftpd-storage
+    #     size: 10Gi
+    #     storageClass: ""
+    #     accessModes:
+    #       - ReadWriteOnce
 
+  # MinIO backend configuration
   minio:
     enabled: false
     instances: []
+    # Example:
+    # - name: minio-backend
+    #   endpoint: minio.default.svc.cluster.local:9000
+    #   bucket: ftp-data
+    #   region: us-east-1
+    #   useSSL: false
+    #   credentials:
+    #     secretName: minio-credentials
+    #     accessKeyKey: accessKey
+    #     secretKeyKey: secretKey
 
-# User configuration
-users:
-  admin:
+  # WebDAV backend configuration
+  webdav:
     enabled: false
+    instances: []
+    # Example:
+    # - name: webdav-backend
+    #   baseURL: https://webdav.example.com/dav
+    #   credentials:
+    #     secretName: webdav-credentials
+    #     usernameKey: username
+    #     passwordKey: password
+
+# Users configuration
+users:
+  # Default admin user - disabled by default for GitOps deployment
+  admin:
+    enabled: false  # Disable by default to avoid circular dependencies
     username: "admin"
-    passwordSecret:
-      name: "kubeftpd-admin-password"
-      key: "password"
+    password: ""  # Use external secrets for password management
     homeDirectory: "/admin"
     backend:
       kind: "FilesystemBackend"
-      name: "default-storage"
+      name: "default"
+    permissions:
+      read: true
+      write: true
+      delete: true
+      list: true
 
-  anonymous:
-    enabled: false
-    username: "anonymous"
-    homeDirectory: "/anonymous"
-    backend:
-      kind: "FilesystemBackend"
-      name: "default-storage"
-
+  # Additional users
   additional: []
-    # Example:
-    # - name: demo-user
-    #   username: "demo"
-    #   passwordSecret:
-    #     name: "kubeftpd-demo-password"
-    #     key: "password"
-    #   homeDirectory: "/demo"
-    #   backend:
-    #     kind: "FilesystemBackend"
-    #     name: "default-storage"
-    #   permissions:
-    #     read: true
-    #     write: true
-    #     delete: false
-    #     list: true
+  # Example:
+  # - name: user1
+  #   username: "user1"
+  #   password: "password123"
+  #   homeDirectory: "/users/user1"
+  #   backend:
+  #     kind: "FilesystemBackend"
+  #     name: "local-storage"
+  #   permissions:
+  #     read: true
+  #     write: true
+  #     delete: false
+  #     list: true
 
-# Webhook configuration for user validation
+# Webhook configuration for password validation
 webhook:
-  enabled: true
+  enabled: false
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  failurePolicy: Fail
   validation:
     passwordStrength:
       enabled: true
-      minLength: 12
+      minLength: 8
       requireComplexity: true
     production:
       enabled: true
       requireSecrets: true
+      secretNamingPattern: ".*-ftp-(password|credentials)$"
+    secrets:
+      validateExistence: true
+      validateKeyExists: true
 
-# Network policy
+# Network policies
 networkPolicy:
   enabled: false
   ingress: []
+  egress: []
 
 # Pod disruption budget
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+  # maxUnavailable: 1
 
-# Service account configuration
-serviceAccount:
-  create: true
-  annotations: {}
-  name: ""
+# Security configuration
+security:
+  passwordPolicy:
+    enforceStrong: true
+    minLength: 8
+    requireComplexity: true
+    forbidWeakPatterns: true
+  production:
+    forbidPlaintextPasswords: true
+    requireSecretNaming: true
 
-# Common labels and annotations applied to all resources
+# Common labels and annotations
 commonLabels: {}
 commonAnnotations: {}
+
+# Full name override
+fullnameOverride: ""
+nameOverride: ""

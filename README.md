@@ -19,7 +19,6 @@ KubeFTPd is designed to replace traditional FTP solutions like SFTPGo with a clo
 - **Built-in User Types**: Anonymous FTP (RFC 1635) and admin users with automatic User CR management
 - **PASV Mode Support**: Currently supports passive FTP mode with active mode planned
 - **Gateway API Support**: Modern alternative to LoadBalancer with standardized TCP routing
-- **Cozystack Integration**: Native support for Cozystack PaaS platform with FluxCD deployment
 - **RBAC Integration**: Full Kubernetes RBAC support for access control
 - **Health & Metrics**: Built-in health checks, JSON logging, and metrics endpoints
 - **Security First**: TLS support, dual password authentication (plaintext/secrets), webhook validation
@@ -811,30 +810,6 @@ ftp:
 - **Efficient**: Shared infrastructure reduces resource overhead
 
 **See [GATEWAY_API_SUPPORT.md](GATEWAY_API_SUPPORT.md) for detailed configuration and examples.**
-
-### Cozystack Platform Deployment
-
-For [Cozystack](https://cozystack.io/) PaaS platform deployment with FluxCD GitOps:
-
-```bash
-# Deploy with FluxCD HelmRelease
-kubectl apply -f examples/cozystack/helmrelease.yaml
-
-# Or deploy with Kustomize
-kubectl apply -k examples/cozystack/
-
-# Or use Cozystack-optimized values
-helm install kubeftpd ./chart/kubeftpd \
-  --values chart/kubeftpd/examples/values-cozystack.yaml
-```
-
-**Cozystack Features:**
-- **FluxCD Integration**: Native HelmRelease resources for GitOps workflows
-- **Multi-tenant Security**: Enhanced security configurations for shared environments
-- **Resource Optimization**: Conservative resource limits suitable for PaaS platforms
-- **Network Policies**: Automatic network isolation for multi-tenant deployments
-
-**See [COZYSTACK_INTEGRATION.md](COZYSTACK_INTEGRATION.md) for detailed deployment guide and examples.**
 
 ## Migration from SFTPGo
 
