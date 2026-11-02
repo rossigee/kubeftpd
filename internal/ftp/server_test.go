@@ -236,7 +236,9 @@ func TestServerAllInterfaces(t *testing.T) {
 	}
 
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		t.Logf("Server shutdown with error: %v (expected from context cancellation)", err)
+	}
 }
 
 // TestServerConfiguration verifies NewServer creates correct configuration
