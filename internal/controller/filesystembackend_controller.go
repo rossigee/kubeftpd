@@ -184,13 +184,13 @@ func (r *FilesystemBackendReconciler) getStorageStats(path string) (available in
 
 	// Calculate with overflow protection
 	if stat.Bavail > 0 && stat.Bsize > 0 && stat.Bavail <= maxInt64/uint64(stat.Bsize) {
-		available = int64(stat.Bavail) * int64(stat.Bsize) // nolint:gosec // Overflow protected
+		available = int64(stat.Bavail) * int64(stat.Bsize) // #nosec G115 -- overflow prevented by bounds check above
 	} else {
 		available = maxInt64 // Use max value if overflow would occur
 	}
 
 	if stat.Blocks > 0 && stat.Bsize > 0 && stat.Blocks <= maxInt64/uint64(stat.Bsize) {
-		total = int64(stat.Blocks) * int64(stat.Bsize) // nolint:gosec // Overflow protected
+		total = int64(stat.Blocks) * int64(stat.Bsize) // #nosec G115 -- overflow prevented by bounds check above
 	} else {
 		total = maxInt64 // Use max value if overflow would occur
 	}
