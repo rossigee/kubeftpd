@@ -31,10 +31,9 @@ Updates version references across all files in the project and prepares for rele
   - `Dockerfile`
   - `cmd/main.go`
   - `README.md`
-  - `chart/kubeftpd/Chart.yaml` (if exists)
-  - `chart/kubeftpd/values.yaml` (if exists)
+  - `charts/kubeftpd/Chart.yaml` (if exists)
+  - `charts/kubeftpd/values.yaml` (if exists)
   - `config/production/kustomization.yaml` (if exists)
-  - Release manifest files in `releases/` directory
 - ✅ Shows diff of changes before committing
 - ✅ Creates properly formatted commit message
 - ✅ Provides next steps for tagging and pushing

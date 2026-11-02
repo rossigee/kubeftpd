@@ -38,6 +38,9 @@ helm.sh/chart: {{ include "kubeftpd.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- with .Values.commonLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -52,9 +55,26 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Create the name of the service account to use
 */}}
 {{- define "kubeftpd.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "kubeftpd.fullname" .) .Values.serviceAccount.name }}
+{{- if .Values.controller.serviceAccount.create }}
+{{- default (include "kubeftpd.fullname" .) .Values.controller.serviceAccount.name }}
 {{- else }}
-{{- default "default" .Values.serviceAccount.name }}
+{{- default "default" .Values.controller.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Controller image name
+*/}}
+{{- define "kubeftpd.controller.image" -}}
+{{- $registry := .Values.global.imageRegistry | default .Values.controller.image.registry }}
+{{- printf "%s/%s:%s" $registry .Values.controller.image.repository (.Values.controller.image.tag | default .Chart.AppVersion) }}
+{{- end }}
+
+{{/*
+Common annotations
+*/}}
+{{- define "kubeftpd.annotations" -}}
+{{- with .Values.commonAnnotations }}
+{{ toYaml . }}
 {{- end }}
 {{- end }}

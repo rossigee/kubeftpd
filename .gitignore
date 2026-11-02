@@ -84,5 +84,5 @@ local-secrets/
 *.tar.gz
 *.tgz
 
-# Main binary
-kubeftpd
+# Main binary (repo root only; a bare pattern would also ignore charts/kubeftpd)
+/kubeftpd

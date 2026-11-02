@@ -1,0 +1,96 @@
+{{- if .Values.ftp.gateway.enabled }}
+{{- if and .Values.ftp.gateway.create (not .Values.ftp.gateway.gatewayName) }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ftp-gateway
+  {{- with .Values.ftp.gateway.labels }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.ftp.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.ftp.gateway.config.gatewayClassName }}
+  {{- with .Values.ftp.gateway.config.addresses }}
+  addresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  listeners:
+    # FTP control port listener
+    - name: ftp-control
+      port: {{ .Values.ftp.service.port }}
+      protocol: TCP
+      {{- with .Values.ftp.gateway.config.listeners }}
+      {{- range . }}
+      {{- if eq .name "ftp-control" }}
+      {{- with .allowedRoutes }}
+      allowedRoutes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- end }}
+    # FTP passive data ports listeners
+    {{- range $port := untilStep (int .Values.ftp.service.passivePortRange.min) (int (add .Values.ftp.service.passivePortRange.max 1)) 1 }}
+    - name: ftp-passive-{{ $port }}
+      port: {{ $port }}
+      protocol: TCP
+      {{- with $.Values.ftp.gateway.config.listeners }}
+      {{- range . }}
+      {{- if eq .name "ftp-passive" }}
+      {{- with .allowedRoutes }}
+      allowedRoutes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- end }}
+    {{- end }}
+{{- end }}
+---
+# TCPRoute for FTP control port
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: {{ include "kubeftpd.fullname" . }}-ftp-control-route
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ftp-gateway-route
+spec:
+  parentRefs:
+    - name: {{ if .Values.ftp.gateway.gatewayName }}{{ .Values.ftp.gateway.gatewayName }}{{ else }}{{ include "kubeftpd.fullname" . }}-gateway{{ end }}
+      sectionName: ftp-control
+  rules:
+    - backendRefs:
+        - name: {{ include "kubeftpd.fullname" . }}-ftp-service
+          port: {{ .Values.ftp.service.port }}
+---
+# TCPRoutes for FTP passive data ports
+{{- range $port := untilStep (int .Values.ftp.service.passivePortRange.min) (int (add .Values.ftp.service.passivePortRange.max 1)) 1 }}
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: {{ include "kubeftpd.fullname" $ }}-ftp-passive-{{ $port }}-route
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "kubeftpd.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: ftp-gateway-route
+spec:
+  parentRefs:
+    - name: {{ if $.Values.ftp.gateway.gatewayName }}{{ $.Values.ftp.gateway.gatewayName }}{{ else }}{{ include "kubeftpd.fullname" $ }}-gateway{{ end }}
+      sectionName: ftp-passive-{{ $port }}
+  rules:
+    - backendRefs:
+        - name: {{ include "kubeftpd.fullname" $ }}-ftp-service
+          port: {{ $port }}
+---
+{{- end }}
+{{- end }}

@@ -96,24 +96,17 @@ function update_versions() {
         sed_replace "Dockerfile" "s/ARG VERSION=v[0-9]\+\.[0-9]\+\.[0-9]\+/ARG VERSION=$new_version/"
     fi
 
-    # Legacy chart: chart/kubeftpd/Chart.yaml
-    if [[ -f "chart/kubeftpd/Chart.yaml" ]]; then
-        log_info "Updating chart/kubeftpd/Chart.yaml"
-        sed_replace "chart/kubeftpd/Chart.yaml" "s/^version: [0-9]\+\.[0-9]\+\.[0-9]\+$/version: $new_version_no_v/"
-        sed_replace "chart/kubeftpd/Chart.yaml" "s/^appVersion: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"$/appVersion: \"$new_version\"/"
-    fi
-
-    # CI-relevant chart: charts/kubeftpd/Chart.yaml
+    # Helm chart: charts/kubeftpd/Chart.yaml
     if [[ -f "charts/kubeftpd/Chart.yaml" ]]; then
         log_info "Updating charts/kubeftpd/Chart.yaml"
         sed_replace "charts/kubeftpd/Chart.yaml" "s/^version: [0-9]\+\.[0-9]\+\.[0-9]\+$/version: $new_version_no_v/"
         sed_replace "charts/kubeftpd/Chart.yaml" "s/^appVersion: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"$/appVersion: \"$new_version\"/"
     fi
 
-    # Legacy Helm values.yaml - image tag
-    if [[ -f "chart/kubeftpd/values.yaml" ]]; then
-        log_info "Updating chart/kubeftpd/values.yaml"
-        sed_replace "chart/kubeftpd/values.yaml" "s/tag: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"/tag: \"$new_version\"/"
+    # Helm values.yaml - image tag
+    if [[ -f "charts/kubeftpd/values.yaml" ]]; then
+        log_info "Updating charts/kubeftpd/values.yaml"
+        sed_replace "charts/kubeftpd/values.yaml" "s/tag: \"v[0-9]\+\.[0-9]\+\.[0-9]\+\"/tag: \"$new_version\"/"
     fi
 
     # config/manager/kustomization.yaml
@@ -135,21 +128,12 @@ function update_versions() {
         sed_replace "README.md" "s/controller.image.tag=v[0-9]\+\.[0-9]\+\.[0-9]\+/controller.image.tag=$new_version/g"
     fi
 
-    # Legacy chart README.md
-    if [[ -f "chart/kubeftpd/README.md" ]]; then
-        log_info "Updating chart/kubeftpd/README.md"
-        sed_replace "chart/kubeftpd/README.md" "s/rossigee\/kubeftpd:v[0-9]\+\.[0-9]\+\.[0-9]\+/rossigee\/kubeftpd:$new_version/g"
+    # Helm chart README.md
+    if [[ -f "charts/kubeftpd/README.md" ]]; then
+        log_info "Updating charts/kubeftpd/README.md"
+        sed_replace "charts/kubeftpd/README.md" "s/rossigee\/kubeftpd:v[0-9]\+\.[0-9]\+\.[0-9]\+/rossigee\/kubeftpd:$new_version/g"
     fi
 
-    # Release manifests directory - update contents only
-    if [[ -d "releases" ]]; then
-        log_info "Checking releases/ directory for version references"
-        for file in releases/*; do
-            if [[ -f "$file" ]]; then
-                sed_replace "$file" "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/$new_version/g"
-            fi
-        done
-    fi
 }
 
 function show_changes() {
@@ -207,6 +191,13 @@ function main() {
     # Check if working directory is clean
     if [[ -n "$(git status --porcelain)" ]]; then
         log_error "Working directory is not clean. Please commit or stash changes first."
+        exit 1
+    fi
+
+    # CHANGELOG must already contain a section for the new version
+    if ! grep -q "^## \[$new_version\] - " CHANGELOG.md; then
+        log_error "CHANGELOG.md has no '## [$new_version] - YYYY-MM-DD' section."
+        log_error "Add the release notes for $new_version before running this script."
         exit 1
     fi
 

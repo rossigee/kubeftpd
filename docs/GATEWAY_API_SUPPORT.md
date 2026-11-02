@@ -203,8 +203,8 @@ ftp:
 
 ```bash
 # Install with Gateway API support
-helm install kubeftpd ./chart/kubeftpd \
-  --values chart/kubeftpd/examples/values-gateway.yaml \
+helm install kubeftpd ./charts/kubeftpd \
+  --set ftp.gateway.enabled=true \
   --set ftp.gateway.config.gatewayClassName=istio \
   --set ftp.gateway.config.addresses[0].value="203.0.113.100"
 ```
@@ -213,7 +213,7 @@ helm install kubeftpd ./chart/kubeftpd \
 
 ```bash
 # Use shared infrastructure Gateway
-helm install kubeftpd ./chart/kubeftpd \
+helm install kubeftpd ./charts/kubeftpd \
   --set ftp.gateway.enabled=true \
   --set ftp.gateway.create=false \
   --set ftp.gateway.gatewayName="shared-gateway"
@@ -223,7 +223,7 @@ helm install kubeftpd ./chart/kubeftpd \
 
 ```bash
 # Simple Gateway without external IP
-helm install kubeftpd ./chart/kubeftpd \
+helm install kubeftpd ./charts/kubeftpd \
   --set ftp.gateway.enabled=true \
   --set ftp.gateway.config.gatewayClassName="envoy-gateway"
 ```
@@ -290,7 +290,7 @@ ftp:
 
 ```bash
 # Update deployment
-helm upgrade kubeftpd ./chart/kubeftpd -f values-gateway.yaml
+helm upgrade kubeftpd ./charts/kubeftpd -f your-values.yaml  # containing the Step 2 settings
 
 # Verify Gateway resources
 kubectl get gateway
