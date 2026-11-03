@@ -78,24 +78,28 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// Validate user configuration
 	if err := r.validateUser(ctx, user); err != nil {
 		log.Error(err, "User validation failed", "user", user.Name)
-		r.updateUserStatus(ctx, user, metav1.Condition{
+		if statusErr := r.updateUserStatus(ctx, user, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
 			Reason:             "ValidationFailed",
 			Message:            err.Error(),
 			LastTransitionTime: metav1.Now(),
-		})
+		}); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
 		return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
 	}
 
 	// Update status to ready
-	r.updateUserStatus(ctx, user, metav1.Condition{
+	if err := r.updateUserStatus(ctx, user, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
 		Reason:             "UserValid",
 		Message:            "User configuration is valid",
 		LastTransitionTime: metav1.Now(),
-	})
+	}); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	log.Info("User reconciliation completed", "user", user.Name)
 	// Don't requeue - only reconcile on spec changes
@@ -225,11 +229,13 @@ func (r *UserReconciler) validateRegularUser(user *ftpv1.User) error {
 }
 
 // updateUserStatus updates the user status with the given condition
-func (r *UserReconciler) updateUserStatus(ctx context.Context, user *ftpv1.User, condition metav1.Condition) {
+// The error is returned so that a status not written is retried.
+func (r *UserReconciler) updateUserStatus(ctx context.Context, user *ftpv1.User, condition metav1.Condition) error {
 	user.Status.Conditions = []metav1.Condition{condition}
 	if err := r.Status().Update(ctx, user); err != nil {
-		logf.FromContext(ctx).Error(err, "Failed to update User status")
+		return fmt.Errorf("updating User status: %w", err)
 	}
+	return nil
 }
 
 // handleUserDeletion handles cleanup when a user is being deleted

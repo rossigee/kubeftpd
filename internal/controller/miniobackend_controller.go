@@ -91,7 +91,7 @@ func (r *MinioBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			backend.Status.LastConnectivityTest = metav1.Now()
 			backend.Status.ObservedGeneration = backend.Generation
 			if err := r.Status().Update(ctx, backend); err != nil {
-				log.Error(err, "Failed to update MinioBackend status")
+				return ctrl.Result{}, fmt.Errorf("updating MinioBackend status: %w", err)
 			}
 			return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
 		}
@@ -107,7 +107,7 @@ func (r *MinioBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		backend.Status.LastConnectivityTest = metav1.Now()
 		backend.Status.ObservedGeneration = backend.Generation
 		if err := r.Status().Update(ctx, backend); err != nil {
-			log.Error(err, "Failed to update MinioBackend status")
+			return ctrl.Result{}, fmt.Errorf("updating MinioBackend status: %w", err)
 		}
 	}
 
