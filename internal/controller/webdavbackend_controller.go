@@ -81,36 +81,38 @@ func (r *WebDavBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Test connectivity to WebDAV
 		if err := r.testWebDavConnectivity(ctx, backend); err != nil {
 			log.Error(err, "WebDAV connectivity test failed", "backend", backend.Name)
-			r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
+			if err := r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
 				Type:               "Ready",
 				Status:             metav1.ConditionFalse,
 				Reason:             "ConnectionFailed",
 				Message:            err.Error(),
 				LastTransitionTime: metav1.Now(),
-			})
+			}); err != nil {
+				return ctrl.Result{}, err
+			}
 			// Mark that we tested connectivity
 			r.markConnectivityTested(backend)
-			err := r.Status().Update(ctx, backend)
-			if err != nil {
-				log.Error(err, "Failed to update connectivity test timestamp")
+			if err := r.Status().Update(ctx, backend); err != nil {
+				return ctrl.Result{}, fmt.Errorf("recording connectivity test: %w", err)
 			}
 			return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
 		}
 
 		// Update status to ready
-		r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
+		if err := r.updateWebDavBackendStatus(ctx, backend, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionTrue,
 			Reason:             "ConnectionSuccessful",
 			Message:            "Successfully connected to WebDAV backend",
 			LastTransitionTime: metav1.Now(),
-		})
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
 
 		// Mark that we tested connectivity
 		r.markConnectivityTested(backend)
-		err := r.Status().Update(ctx, backend)
-		if err != nil {
-			log.Error(err, "Failed to update connectivity test timestamp")
+		if err := r.Status().Update(ctx, backend); err != nil {
+			return ctrl.Result{}, fmt.Errorf("recording connectivity test: %w", err)
 		}
 	}
 
@@ -150,11 +152,14 @@ func (r *WebDavBackendReconciler) markConnectivityTested(backend *ftpv1.WebDavBa
 }
 
 // updateWebDavBackendStatus updates the backend status with the given condition
-func (r *WebDavBackendReconciler) updateWebDavBackendStatus(ctx context.Context, backend *ftpv1.WebDavBackend, condition metav1.Condition) {
+// The error is returned, not only logged: a status that was not written must
+// be retried, or the condition stays wrong until the object changes.
+func (r *WebDavBackendReconciler) updateWebDavBackendStatus(ctx context.Context, backend *ftpv1.WebDavBackend, condition metav1.Condition) error {
 	backend.Status.Conditions = []metav1.Condition{condition}
 	if err := r.Status().Update(ctx, backend); err != nil {
-		logf.FromContext(ctx).Error(err, "Failed to update WebDavBackend status")
+		return fmt.Errorf("updating WebDavBackend status: %w", err)
 	}
+	return nil
 }
 
 // handleWebDavBackendDeletion handles cleanup when a backend is being deleted

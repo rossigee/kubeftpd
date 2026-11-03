@@ -781,11 +781,11 @@ func TestUserReconciler_UpdateUserStatusPersistsCondition(t *testing.T) {
 	fetched := &ftpv1.User{}
 	assert.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "bob", Namespace: "default"}, fetched))
 
-	reconciler.updateUserStatus(context.Background(), fetched, metav1.Condition{
+	assert.NoError(t, reconciler.updateUserStatus(context.Background(), fetched, metav1.Condition{
 		Type:   "Ready",
 		Status: metav1.ConditionTrue,
 		Reason: "Configured",
-	})
+	}))
 
 	after := &ftpv1.User{}
 	assert.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "bob", Namespace: "default"}, after))
