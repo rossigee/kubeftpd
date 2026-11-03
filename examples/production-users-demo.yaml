@@ -1,18 +1,19 @@
-# Production-Ready User Management Demo
-# This example shows how to set up secure FTP users with secret-based passwords
+# Production-style user management.
+# Replace every "<change-me>" with a generated password before applying.
+# Do not commit real passwords to git.
 
 ---
-# Namespace for our FTP users and secrets
+# Namespace for FTP users and their password Secrets
 apiVersion: v1
 kind: Namespace
 metadata:
   name: ftp-users
   labels:
     purpose: ftp-user-management
-    security-level: production
+    environment: production   # enables the production password rules
 
 ---
-# RBAC: ServiceAccount for KubeFTPd to access secrets
+# RBAC: ServiceAccount the KubeFTPd controller runs as, if it reads Secrets from this namespace
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -20,37 +21,37 @@ metadata:
   namespace: ftp-users
 
 ---
-# RBAC: Role to read user secrets
+# RBAC: read access to password Secrets.
+# Kubernetes matches resourceNames exactly, so list each Secret the controller may read.
+# Without resourceNames, the rule covers every Secret in the namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   namespace: ftp-users
   name: ftp-secret-reader
 rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list"]
-  # Restrict to secrets with specific naming pattern
-  resourceNames: ["*-ftp-password"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["john-doe-ftp-password", "api-service-credentials"]
 
 ---
-# RBAC: Bind the role to the service account
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kubeftpd-secret-access
   namespace: ftp-users
 subjects:
-- kind: ServiceAccount
-  name: kubeftpd-secret-reader
-  namespace: ftp-users
+  - kind: ServiceAccount
+    name: kubeftpd-secret-reader
+    namespace: ftp-users
 roleRef:
   kind: Role
   name: ftp-secret-reader
   apiGroup: rbac.authorization.k8s.io
 
 ---
-# Secret for production user with strong password
+# Password Secret for a human user
 apiVersion: v1
 kind: Secret
 metadata:
@@ -60,15 +61,13 @@ metadata:
     user: john-doe
     purpose: ftp-authentication
   annotations:
-    created-by: "admin@company.com"
     rotation-schedule: "quarterly"
 type: Opaque
-data:
-  # Strong password: "Prod#Secure$Pass2024!"
-  password: UHJvZCNTZWN1cmUkUGFzczIwMjQh
+stringData:
+  password: "<change-me>"
 
 ---
-# Secret for API user with custom key
+# Secret for a service account, with a custom key name
 apiVersion: v1
 kind: Secret
 metadata:
@@ -78,12 +77,11 @@ metadata:
     user: api-service
     purpose: automated-ftp-access
 type: Opaque
-data:
-  # Custom key for API service: "Api$Service#Key789"
-  ftp-access-key: QXBpJFNlcnZpY2UjS2V5Nzg5
+stringData:
+  ftp-access-key: "<change-me>"
 
 ---
-# Production user with secret-based password
+# Human user with a Secret-based password
 apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
@@ -92,7 +90,6 @@ metadata:
   labels:
     user-type: human
     department: marketing
-    access-level: standard
 spec:
   username: "john.doe"
   passwordSecret:
@@ -107,11 +104,11 @@ spec:
   permissions:
     read: true
     write: true
-    delete: false  # No delete permissions for safety
+    delete: false      # no delete permission for humans by default
     list: true
 
 ---
-# API service user with custom secret key
+# Service account user with a custom Secret key
 apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
@@ -120,12 +117,11 @@ metadata:
   labels:
     user-type: service
     department: engineering
-    access-level: automated
 spec:
   username: "api-service"
   passwordSecret:
     name: "api-service-credentials"
-    key: "ftp-access-key"  # Custom key name
+    key: "ftp-access-key"
   backend:
     kind: MinioBackend
     name: production-storage
@@ -135,25 +131,24 @@ spec:
   permissions:
     read: true
     write: true
-    delete: true   # API service can delete files
+    delete: true
     list: true
 
 ---
-# Development user with plaintext password (not for production)
+# Development user with a plaintext password.
+# Plaintext is rejected in namespaces labelled environment=production, so this
+# user only works in a development namespace. Create "dev-sandbox" first
+# (kubectl create namespace dev-sandbox), or change the namespace.
 apiVersion: ftp.golder.org/v1
 kind: User
 metadata:
   name: dev-test-user
-  namespace: ftp-users
+  namespace: dev-sandbox
   labels:
     user-type: development
-    environment: testing
-    warning: "plaintext-password"
-  annotations:
-    security-warning: "This user uses plaintext password - not for production"
 spec:
   username: "dev.test"
-  password: "dev123"  # Only for development/testing
+  password: "<change-me>"
   backend:
     kind: FilesystemBackend
     name: dev-storage
@@ -167,18 +162,19 @@ spec:
     list: true
 
 ---
-# Monitoring: ServiceMonitor for password security metrics
+# Scrape the HTTP Service, which carries the metrics endpoint
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: kubeftpd-security-metrics
-  namespace: ftp-users
+  name: kubeftpd-metrics
+  namespace: kubeftpd-system
 spec:
   selector:
     matchLabels:
-      app: kubeftpd
+      app.kubernetes.io/name: kubeftpd
+      app.kubernetes.io/component: http
   endpoints:
-  - port: metrics
-    path: /metrics
-    interval: 30s
-    scrapeTimeout: 10s
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
