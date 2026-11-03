@@ -5,7 +5,7 @@
 Images are published to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
 
 ```text
-ghcr.io/rossigee/kubeftpd:v0.9.4   # a release
+ghcr.io/rossigee/kubeftpd:v0.10.0   # a release
 ghcr.io/rossigee/kubeftpd:latest   # the most recent release
 ```
 
@@ -17,7 +17,7 @@ The chart is published as an OCI artifact alongside the container image.
 kubectl create namespace kubeftpd-system
 
 helm install kubeftpd oci://ghcr.io/rossigee/kubeftpd/charts/kubeftpd \
-  --version 0.9.4 \
+  --version 0.10.0 \
   --namespace kubeftpd-system \
   --set webhook.enabled=true
 ```
@@ -28,7 +28,7 @@ Customise with a values file:
 # values.yaml
 controller:
   image:
-    tag: v0.9.4          # pin the version; the chart defaults to the chart's appVersion
+    tag: v0.10.0          # pin the version; the chart defaults to the chart's appVersion
   replicas: 1
   logLevel: info
 
@@ -52,18 +52,18 @@ webhook:
       requireSecrets: true
 ```
 
-Run `helm show values oci://ghcr.io/rossigee/kubeftpd/charts/kubeftpd --version 0.9.4` for the full list of options.
+Run `helm show values oci://ghcr.io/rossigee/kubeftpd/charts/kubeftpd --version 0.10.0` for the full list of options.
 
 ## kubectl
 
 Each release attaches two manifests:
 
 ```bash
-kubectl apply -f https://github.com/rossigee/kubeftpd/releases/download/v0.9.4/crds.yaml
-kubectl apply -f https://github.com/rossigee/kubeftpd/releases/download/v0.9.4/kubeftpd.yaml
+kubectl apply -f https://github.com/rossigee/kubeftpd/releases/download/v0.10.0/crds.yaml
+kubectl apply -f https://github.com/rossigee/kubeftpd/releases/download/v0.10.0/kubeftpd.yaml
 ```
 
-Use `releases/latest/download/` in place of `download/v0.9.4/` to track the newest release.
+Use `releases/latest/download/` in place of `download/v0.10.0/` to track the newest release.
 
 ## Load balancer
 
