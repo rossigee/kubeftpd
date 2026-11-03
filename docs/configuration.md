@@ -66,7 +66,6 @@ See [monitoring.md](monitoring.md#tracing) for the spans emitted.
 
 - The Helm values `ftp.settings.idleTimeout` and `ftp.settings.maxConnections` are passed to the controller as `FTP_IDLE_TIMEOUT` and `FTP_MAX_CONNECTIONS`, but the controller does not read those variables yet, so the values have no effect.
 - `config/manager` sets `LOG_FORMAT`, which the controller does not read. Logs are always structured JSON.
-- **Passive port declarations (chart):** with default values, the Service targets named ports `passive-10000` to `passive-10019`, but the pod declares none of them. The passive container ports render only when the legacy `ftp.passive.enabled` flag is true. Passive mode is therefore unverified on a default install. This was found from `helm template` output and has not been tested on a live cluster.
 
 ## Security hardening
 

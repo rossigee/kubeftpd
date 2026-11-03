@@ -67,8 +67,7 @@ Use `releases/latest/download/` in place of `download/v0.9.4/` to track the newe
 
 ## Load balancer
 
-Expose the FTP control port and the passive data ports from **one** LoadBalancer Service. Splitting them across Services gives them different external IPs, and passive-mode clients then fail with "No route to host". The chart creates this Service when `ftp.service.type` is `LoadBalancer`. Known issue: on a default install the Service's passive ports are not declared on the pod, so passive mode is unverified. See [configuration.md](configuration.md#known-issues).
-
+Expose the FTP control port and the passive data ports from **one** LoadBalancer Service. Splitting them across Services gives them different external IPs, and passive-mode clients then fail with "No route to host". The chart creates this Service when `ftp.service.type` is `LoadBalancer`.
 For a hand-written Service, match the chart's labels and list every port:
 
 ```yaml

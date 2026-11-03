@@ -68,12 +68,11 @@ spec:
         - containerPort: {{ .Values.ftp.service.port }}
           name: ftp
           protocol: TCP
-        {{- if .Values.ftp.passive.enabled }}
-        {{- range $port := untilStep (int .Values.ftp.passive.service.portRange.min) (int (add .Values.ftp.passive.service.portRange.max 1)) 1 }}
+        {{- /* Declare the same passive ports the Service targets by name */}}
+        {{- range $port := untilStep (int .Values.ftp.service.passivePortRange.min) (int (add .Values.ftp.service.passivePortRange.max 1)) 1 }}
         - containerPort: {{ $port }}
           name: passive-{{ $port }}
           protocol: TCP
-        {{- end }}
         {{- end }}
         {{- if .Values.controller.http.enabled }}
         - containerPort: {{ .Values.controller.http.service.port }}
