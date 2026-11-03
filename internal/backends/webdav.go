@@ -3,6 +3,7 @@ package backends
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,9 @@ import (
 )
 
 // davResponse is a minimal struct for parsing WebDAV PROPFIND multi-status responses.
+// errWebDAVNotFound is returned by Stat when the server answers 404.
+var errWebDAVNotFound = errors.New("file not found")
+
 type davResponse struct {
 	Responses []davResponseEntry `xml:"response"`
 }
@@ -190,7 +194,7 @@ func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
-		return nil, fmt.Errorf("file not found")
+		return nil, errWebDAVNotFound
 	}
 
 	if resp.StatusCode >= 400 {
@@ -239,10 +243,15 @@ func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 // Exists checks if a file or directory exists
 func (w *webDavBackendImpl) Exists(filePath string) (bool, error) {
 	_, err := w.Stat(filePath)
-	if err != nil {
+	if err == nil {
+		return true, nil
+	}
+	// Only a 404 means "does not exist". Transport and server failures must not
+	// be reported as a missing file.
+	if errors.Is(err, errWebDAVNotFound) {
 		return false, nil
 	}
-	return true, nil
+	return false, err
 }
 
 // Open opens a file for reading

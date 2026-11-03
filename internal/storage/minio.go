@@ -109,12 +109,15 @@ func (s *minioStorage) ListDir(dirPath string, callback func(os.FileInfo) error)
 	for _, obj := range objects {
 		// Get relative path from the listing prefix
 		relativePath := strings.TrimPrefix(obj.Key, fullPath)
-		if relativePath == "" {
-			continue
-		}
 
 		// Remove leading slash
 		relativePath = strings.TrimPrefix(relativePath, "/")
+
+		// The listed directory's own marker object (e.g. "dir/") has nothing left
+		// after trimming; it is not an entry and must not surface as one with an empty name.
+		if relativePath == "" {
+			continue
+		}
 
 		// Check if this is a subdirectory
 		parts := strings.Split(relativePath, "/")

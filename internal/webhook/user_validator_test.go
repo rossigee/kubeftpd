@@ -284,6 +284,68 @@ func TestUserValidator_Handle(t *testing.T) {
 	}
 }
 
+func TestUserValidator_validateSecretReference(t *testing.T) {
+	ns := "tenants"
+	other := "shared"
+	ref := func(name string, key string, namespace *string) *ftpv1.User {
+		return &ftpv1.User{
+			ObjectMeta: metav1.ObjectMeta{Name: "u", Namespace: ns},
+			Spec: ftpv1.UserSpec{PasswordSecret: &ftpv1.UserSecretRef{
+				Name: name, Key: key, Namespace: namespace,
+			}},
+		}
+	}
+	secret := func(name, namespace string, data map[string][]byte) *corev1.Secret {
+		return &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}, Data: data}
+	}
+	client := fake.NewClientBuilder().WithObjects(
+		secret("strong", ns, map[string][]byte{"password": []byte("Tr0ub!Lamp-Quartz7")}),
+		secret("custom", ns, map[string][]byte{"ftp-key": []byte("Tr0ub!Lamp-Quartz7")}),
+		secret("empty", ns, map[string][]byte{"password": []byte("")}),
+		secret("weak", ns, map[string][]byte{"password": []byte("password")}),
+		secret("remote", other, map[string][]byte{"password": []byte("Tr0ub!Lamp-Quartz7")}),
+	).Build()
+	v := &UserValidator{Client: client}
+	ctx := context.Background()
+
+	t.Run("no passwordSecret needs no check", func(t *testing.T) {
+		assert.NoError(t, v.validateSecretReference(ctx, &ftpv1.User{}))
+	})
+
+	t.Run("strong password in the default key", func(t *testing.T) {
+		assert.NoError(t, v.validateSecretReference(ctx, ref("strong", "", nil)))
+	})
+
+	t.Run("strong password in a custom key", func(t *testing.T) {
+		assert.NoError(t, v.validateSecretReference(ctx, ref("custom", "ftp-key", nil)))
+	})
+
+	t.Run("explicit namespace is used", func(t *testing.T) {
+		shared := other
+		assert.NoError(t, v.validateSecretReference(ctx, ref("remote", "", &shared)))
+	})
+
+	t.Run("missing secret", func(t *testing.T) {
+		err := v.validateSecretReference(ctx, ref("absent", "", nil))
+		assert.ErrorContains(t, err, "password secret tenants/absent not found or not accessible")
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		err := v.validateSecretReference(ctx, ref("strong", "nope", nil))
+		assert.ErrorContains(t, err, "password key 'nope' not found")
+	})
+
+	t.Run("empty password", func(t *testing.T) {
+		err := v.validateSecretReference(ctx, ref("empty", "", nil))
+		assert.ErrorContains(t, err, "is empty")
+	})
+
+	t.Run("weak password is rejected", func(t *testing.T) {
+		err := v.validateSecretReference(ctx, ref("weak", "", nil))
+		assert.ErrorContains(t, err, "is weak")
+	})
+}
+
 func TestUserValidator_validatePasswordStrength(t *testing.T) {
 	validator := &UserValidator{}
 

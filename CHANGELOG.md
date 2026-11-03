@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Webhook manifest**: `ValidatingWebhookConfiguration` replaces the invalid `ValidatingAdmissionWebhook` kind, and a duplicated document separator is removed
 - **Git ignore**: the root-only `/kubeftpd` binary pattern no longer hides `charts/kubeftpd` files
+- **WebDAV resumed downloads**: a download resumed at an offset (REST then RETR) returned the whole file from byte 0; it now starts at the requested offset, and an offset past the end of the file is rejected
+- **WebDAV existence checks**: an unreachable server or a server error was reported as "does not exist"; only a 404 now means missing, and other failures are returned as errors
+- **MinIO directory listings**: the directory marker object (`dir/`) was listed as an entry with an empty name; it is now skipped
 - **Docs accuracy**: install command and chart version, Go version, metric names, tracing span names, passive port range, log format, and the CI badge
 - **Examples**: credentials replaced with `<change-me>` placeholders; ServiceMonitor matches the chart's HTTP Service; RBAC `resourceNames` no longer uses unsupported wildcards
 - **Password guidance**: the operations doc no longer prints generated passwords to the terminal, and no longer claims compliance checks that weren't performed

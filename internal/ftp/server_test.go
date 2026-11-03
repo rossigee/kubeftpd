@@ -373,3 +373,57 @@ func BenchmarkServerPortValidation(b *testing.B) {
 		_ = server.Start(ctx)
 	}
 }
+
+func TestIsFileNotFoundError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"not found", fmt.Errorf("file not found: a.txt"), true},
+		{"case insensitive", fmt.Errorf("NOT FOUND"), true},
+		{"no such file", fmt.Errorf("open x: no such file or directory"), true},
+		{"does not exist", fmt.Errorf("bucket does not exist"), true},
+		{"storage failure is not not-found", fmt.Errorf("connection reset by peer"), false},
+		{"permission denied is not not-found", fmt.Errorf("permission denied"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isFileNotFoundError(tt.err))
+		})
+	}
+}
+
+// Regression: storage errors must never reach the FTP client verbatim, because
+// they can contain endpoints, bucket names or credentials.
+func TestWrapStorageError_DoesNotLeakDetails(t *testing.T) {
+	assert.NoError(t, wrapStorageError(nil))
+
+	leaky := fmt.Errorf("dial https://minio.internal:9000 with access key AKIAEXAMPLE failed")
+	wrapped := wrapStorageError(leaky)
+	assert.EqualError(t, wrapped, "storage system unavailable")
+	assert.NotContains(t, wrapped.Error(), "minio.internal")
+	assert.NotContains(t, wrapped.Error(), "AKIA")
+}
+
+// Start must fail clearly, not hang or panic, when TLS material or the bind
+// address is unusable.
+func TestServerStart_ErrorPaths(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	t.Run("unreadable TLS certificate files", func(t *testing.T) {
+		s := NewServer("127.0.0.1", 0, "6000-6100", "127.0.0.1", "Welcome", fake.NewClientBuilder().Build())
+		s.TLSCertFile = "/nonexistent/tls.crt"
+		s.TLSKeyFile = "/nonexistent/tls.key"
+		err := s.Start(ctx)
+		assert.ErrorContains(t, err, "failed to create FTP TLS cert watcher")
+	})
+
+	t.Run("bind address that cannot be listened on", func(t *testing.T) {
+		s := NewServer("192.0.2.256", 2121, "6000-6100", "127.0.0.1", "Welcome", fake.NewClientBuilder().Build())
+		err := s.Start(ctx)
+		assert.ErrorContains(t, err, "failed to create listener")
+	})
+}

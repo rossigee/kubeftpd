@@ -60,6 +60,136 @@ func (m *MockMinioBackend) ListObjects(prefix string, recursive bool) ([]*backen
 	return args.Get(0).([]*backends.ObjectInfo), args.Error(1)
 }
 
+func minioTestStorage(perms ftpv1.UserPermissions, b *MockMinioBackend) *minioStorage {
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{Name: "testuser"},
+		Spec:       ftpv1.UserSpec{Username: "testuser", HomeDirectory: "/home/testuser", Permissions: perms},
+	}
+	return &minioStorage{user: user, backend: b, basePath: "/home/testuser", currentDir: "/home/testuser"}
+}
+
+func TestMinioStorage_PermissionsAndMutations(t *testing.T) {
+	t.Run("denied operations never reach the backend", func(t *testing.T) {
+		b := &MockMinioBackend{} // no expectations: any call fails the test
+		s := minioTestStorage(ftpv1.UserPermissions{}, b)
+
+		assert.ErrorContains(t, s.ListDir("d", func(os.FileInfo) error { return nil }), "list permission denied")
+		_, _, err := s.GetFile("f", 0)
+		assert.ErrorContains(t, err, "read permission denied")
+		_, err = s.PutFile("f", strings.NewReader("x"), 0)
+		assert.ErrorContains(t, err, "write permission denied")
+		assert.ErrorContains(t, s.MakeDir("d"), "write permission denied")
+		assert.ErrorContains(t, s.Rename("a", "b"), "write permission denied")
+		assert.ErrorContains(t, s.DeleteFile("f"), "delete permission denied")
+		assert.ErrorContains(t, s.DeleteDir("d"), "delete permission denied")
+		b.AssertNotCalled(t, "ListObjects", mock.Anything, mock.Anything)
+		b.AssertNotCalled(t, "PutObject", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("delete, rename and mkdir delegate with resolved paths", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		s := minioTestStorage(ftpv1.UserPermissions{Write: true, Delete: true}, b)
+		b.On("RemoveObject", "/home/testuser/f").Return(nil).Once()
+		b.On("RemoveObjects", "/home/testuser/d", true).Return(nil).Once()
+		b.On("CopyObject", "/home/testuser/a", "/home/testuser/b", true).Return(nil).Once()
+		b.On("PutObject", "/home/testuser/newdir/", mock.Anything, int64(0)).Return(nil).Once()
+
+		assert.NoError(t, s.DeleteFile("f"))
+		assert.NoError(t, s.DeleteDir("d"))
+		assert.NoError(t, s.Rename("a", "b"))
+		assert.NoError(t, s.MakeDir("newdir"))
+		b.AssertExpectations(t)
+	})
+
+	t.Run("backend errors are returned", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		s := minioTestStorage(ftpv1.UserPermissions{Write: true, Delete: true}, b)
+		boom := errors.New("bucket unreachable")
+		b.On("RemoveObject", "/home/testuser/f").Return(boom).Once()
+		assert.ErrorIs(t, s.DeleteFile("f"), boom)
+	})
+}
+
+func TestMinioStorage_ListDirDeduplicatesSubdirectories(t *testing.T) {
+	b := &MockMinioBackend{}
+	s := minioTestStorage(ftpv1.UserPermissions{List: true}, b)
+	b.On("ListObjects", "/home/testuser/d", false).Return([]*backends.ObjectInfo{
+		{Key: "/home/testuser/d/a.txt", Size: 3},
+		{Key: "/home/testuser/d/sub/x.txt", Size: 1},
+		{Key: "/home/testuser/d/sub/y.txt", Size: 2},
+		{Key: "/home/testuser/d/", Size: 0},
+	}, nil).Once()
+
+	var names []string
+	dirs := map[string]bool{}
+	err := s.ListDir("d", func(fi os.FileInfo) error {
+		names = append(names, fi.Name())
+		dirs[fi.Name()] = fi.IsDir()
+		return nil
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"a.txt", "sub"}, names, "a subdirectory is reported once")
+	assert.True(t, dirs["sub"])
+	assert.False(t, dirs["a.txt"])
+	b.AssertExpectations(t)
+}
+
+func TestMinioStorage_ListDirErrors(t *testing.T) {
+	t.Run("backend failure is wrapped", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		s := minioTestStorage(ftpv1.UserPermissions{List: true}, b)
+		b.On("ListObjects", "/home/testuser/d", false).Return([]*backends.ObjectInfo(nil), errors.New("timeout")).Once()
+		err := s.ListDir("d", func(os.FileInfo) error { return nil })
+		assert.ErrorContains(t, err, "failed to list directory")
+	})
+
+	t.Run("callback error stops the listing", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		s := minioTestStorage(ftpv1.UserPermissions{List: true}, b)
+		b.On("ListObjects", "/home/testuser/d", false).Return([]*backends.ObjectInfo{
+			{Key: "/home/testuser/d/one"}, {Key: "/home/testuser/d/two"},
+		}, nil).Once()
+		stop := errors.New("stop")
+		calls := 0
+		err := s.ListDir("d", func(os.FileInfo) error {
+			calls++
+			return stop
+		})
+		assert.ErrorIs(t, err, stop)
+		assert.Equal(t, 1, calls)
+	})
+}
+
+func TestMinioStorage_TransferErrors(t *testing.T) {
+	t.Run("download failure is wrapped", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		s := minioTestStorage(ftpv1.UserPermissions{Read: true}, b)
+		b.On("StatObject", "/home/testuser/f").Return(&backends.ObjectInfo{Size: 4}, nil).Once()
+		b.On("GetObject", "/home/testuser/f", int64(0), int64(4)).
+			Return(io.NopCloser(strings.NewReader("")), errors.New("reset")).Once()
+		_, _, err := s.GetFile("f", 0)
+		assert.ErrorContains(t, err, "failed to get file")
+	})
+
+	t.Run("resumed upload is refused", func(t *testing.T) {
+		s := minioTestStorage(ftpv1.UserPermissions{Write: true}, &MockMinioBackend{})
+		_, err := s.PutFile("f", strings.NewReader("x"), 1)
+		assert.ErrorContains(t, err, "offset mode not supported")
+	})
+
+	t.Run("upload failure is wrapped", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		s := minioTestStorage(ftpv1.UserPermissions{Write: true}, b)
+		b.On("PutObject", "/home/testuser/f", mock.Anything, int64(-1)).Return(errors.New("quota")).Once()
+		_, err := s.PutFile("f", strings.NewReader("x"), 0)
+		assert.ErrorContains(t, err, "failed to put file")
+	})
+
+	t.Run("close is a no-op", func(t *testing.T) {
+		assert.NoError(t, minioTestStorage(ftpv1.UserPermissions{}, &MockMinioBackend{}).Close())
+	})
+}
+
 func TestMinioStorage_ChangeDir(t *testing.T) {
 	user := &ftpv1.User{
 		ObjectMeta: metav1.ObjectMeta{

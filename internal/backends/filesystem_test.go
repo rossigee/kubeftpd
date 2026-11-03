@@ -518,3 +518,257 @@ func TestFilesystemBackendImpl_WriteToTempFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, testContent, string(content))
 }
+
+func TestFilesystemBackend_ListFilesModes(t *testing.T) {
+	base := createTestDir(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "sub"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "a.txt"), []byte("a"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "sub", "b.txt"), []byte("bb"), 0o644))
+	b := createTestBackend(t, base, false)
+
+	t.Run("non-recursive lists only the top level", func(t *testing.T) {
+		files, err := b.ListFiles("", false)
+		require.NoError(t, err)
+		names := map[string]bool{}
+		for _, f := range files {
+			names[f.Name] = f.IsDir
+		}
+		assert.Equal(t, map[string]bool{"a.txt": false, "sub": true}, names)
+	})
+
+	t.Run("recursive includes nested entries", func(t *testing.T) {
+		files, err := b.ListFiles("", true)
+		require.NoError(t, err)
+		names := map[string]int64{}
+		for _, f := range files {
+			names[f.Name] = f.Size
+		}
+		assert.Equal(t, int64(2), names["b.txt"])
+		assert.Contains(t, names, "a.txt")
+		assert.Contains(t, names, "sub")
+	})
+
+	t.Run("missing directory is an error", func(t *testing.T) {
+		_, err := b.ListFiles("nope", false)
+		assert.ErrorContains(t, err, "failed to read directory nope")
+	})
+}
+
+func TestFilesystemBackend_GetFileRanges(t *testing.T) {
+	base := createTestDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(base, "f.txt"), []byte("hello world"), 0o644))
+	b := createTestBackend(t, base, false)
+
+	read := func(t *testing.T, rc io.ReadCloser) string {
+		t.Helper()
+		data, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		return string(data)
+	}
+
+	rc, err := b.GetFile("f.txt", 6, 0)
+	require.NoError(t, err)
+	assert.Equal(t, "world", read(t, rc), "offset without length reads to end")
+
+	rc, err = b.GetFile("f.txt", 0, 5)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", read(t, rc), "length limits the read")
+
+	rc, err = b.GetFile("f.txt", 6, 2)
+	require.NoError(t, err)
+	assert.Equal(t, "wo", read(t, rc), "offset and length together")
+
+	_, err = b.GetFile("missing.txt", 0, 0)
+	assert.ErrorContains(t, err, "failed to open file missing.txt")
+}
+
+func TestFilesystemBackend_PutFileRefusals(t *testing.T) {
+	base := createTestDir(t)
+
+	t.Run("read-only backend refuses writes", func(t *testing.T) {
+		b := createTestBackend(t, base, true)
+		err := b.PutFile("x.txt", strings.NewReader("data"), 4)
+		assert.ErrorContains(t, err, "read-only")
+		assert.ErrorContains(t, b.MakeDir("d"), "read-only")
+		assert.ErrorContains(t, b.RemoveDir("d", false), "read-only")
+	})
+
+	t.Run("file over the size limit is refused before writing", func(t *testing.T) {
+		b := createTestBackend(t, base, false) // MaxFileSize is 1 MiB in the helper
+		err := b.PutFile("big.bin", strings.NewReader("x"), 2*1024*1024)
+		assert.ErrorContains(t, err, "exceeds maximum allowed size")
+		_, statErr := os.Stat(filepath.Join(base, "big.bin"))
+		assert.True(t, os.IsNotExist(statErr))
+	})
+
+	t.Run("declared size that differs from the data is rejected", func(t *testing.T) {
+		b := createTestBackend(t, base, false)
+		err := b.PutFile("short.txt", strings.NewReader("abc"), 10)
+		assert.ErrorContains(t, err, "size mismatch")
+		_, statErr := os.Stat(filepath.Join(base, "short.txt"))
+		assert.True(t, os.IsNotExist(statErr), "no partial file is left behind")
+	})
+}
+
+func TestFilesystemBackend_PutFileRoundTrip(t *testing.T) {
+	base := createTestDir(t)
+	b := createTestBackend(t, base, false)
+
+	require.NoError(t, b.PutFile("dir/new.txt", strings.NewReader("payload"), 7))
+	info, err := b.StatFile("dir/new.txt")
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), info.Size)
+
+	rc, err := b.GetFile("dir/new.txt", 0, 0)
+	require.NoError(t, err)
+	data, _ := io.ReadAll(rc)
+	_ = rc.Close()
+	assert.Equal(t, "payload", string(data))
+}
+
+func TestFilesystemBackend_RemoveDirAndMakeDir(t *testing.T) {
+	base := createTestDir(t)
+	b := createTestBackend(t, base, false)
+
+	require.NoError(t, b.MakeDir("tree/inner"))
+	require.NoError(t, os.WriteFile(filepath.Join(base, "tree", "inner", "f"), []byte("x"), 0o644))
+
+	assert.Error(t, b.RemoveDir("tree", false), "non-recursive removal of a non-empty directory fails")
+	require.NoError(t, b.RemoveDir("tree", true))
+	_, err := os.Stat(filepath.Join(base, "tree"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+// Regression (path traversal): no requested path may resolve outside the base
+// directory. Escapes fall back to the base itself rather than a host path.
+func TestFilesystemBackend_GetFullPathStaysWithinBase(t *testing.T) {
+	base := createTestDir(t)
+	b := createTestBackend(t, base, false).(*filesystemBackendImpl)
+
+	escapes := []string{"../../etc/passwd", "/../../../etc/passwd", "a/../../../../etc", "..", "../"}
+	for _, p := range escapes {
+		got := b.getFullPath(p)
+		rel, err := filepath.Rel(base, got)
+		require.NoError(t, err)
+		assert.False(t, strings.HasPrefix(rel, ".."), "%q resolved to %q, outside the base", p, got)
+	}
+
+	assert.Equal(t, filepath.Join(base, "docs", "a.txt"), b.getFullPath("/docs/a.txt"), "absolute paths are base-relative")
+	assert.Equal(t, filepath.Join(base, "x", "x"), b.getFullPath("x/./y/../x"), "clean paths are normalised")
+}
+
+func TestNewFilesystemBackend_ValidatesSpec(t *testing.T) {
+	base := createTestDir(t)
+	kubeClient := fake.NewClientBuilder().Build()
+	spec := func(fileMode, dirMode, basePath string) *ftpv1.FilesystemBackend {
+		return &ftpv1.FilesystemBackend{
+			ObjectMeta: metav1.ObjectMeta{Name: "fs", Namespace: "default"},
+			Spec:       ftpv1.FilesystemBackendSpec{BasePath: basePath, FileMode: fileMode, DirMode: dirMode},
+		}
+	}
+
+	t.Run("empty modes take the defaults", func(t *testing.T) {
+		b, err := NewFilesystemBackend(spec("", "", base), kubeClient)
+		require.NoError(t, err)
+		impl := b.(*filesystemBackendImpl)
+		assert.Equal(t, os.FileMode(0o644), impl.fileMode)
+		assert.Equal(t, os.FileMode(0o755), impl.dirMode)
+	})
+
+	t.Run("octal modes are parsed", func(t *testing.T) {
+		b, err := NewFilesystemBackend(spec("0600", "0700", base), kubeClient)
+		require.NoError(t, err)
+		impl := b.(*filesystemBackendImpl)
+		assert.Equal(t, os.FileMode(0o600), impl.fileMode)
+		assert.Equal(t, os.FileMode(0o700), impl.dirMode)
+	})
+
+	t.Run("invalid file mode is rejected", func(t *testing.T) {
+		_, err := NewFilesystemBackend(spec("rwx", "", base), kubeClient)
+		assert.ErrorContains(t, err, "invalid file mode")
+	})
+
+	t.Run("invalid directory mode is rejected", func(t *testing.T) {
+		_, err := NewFilesystemBackend(spec("", "9", base), kubeClient)
+		assert.ErrorContains(t, err, "invalid directory mode")
+	})
+
+	t.Run("missing base path is rejected", func(t *testing.T) {
+		_, err := NewFilesystemBackend(spec("", "", filepath.Join(base, "absent")), kubeClient)
+		assert.ErrorContains(t, err, "is not accessible")
+	})
+}
+
+func TestFilesystemBackend_CopyFileAndFailures(t *testing.T) {
+	base := createTestDir(t)
+	b := createTestBackend(t, base, false)
+	require.NoError(t, os.WriteFile(filepath.Join(base, "src.txt"), []byte("copy me"), 0o644))
+
+	t.Run("copy keeps the source", func(t *testing.T) {
+		require.NoError(t, b.CopyFile("src.txt", "dir/dst.txt", false))
+		data, err := os.ReadFile(filepath.Join(base, "dir", "dst.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "copy me", string(data))
+		_, err = os.Stat(filepath.Join(base, "src.txt"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("move removes the source", func(t *testing.T) {
+		require.NoError(t, os.WriteFile(filepath.Join(base, "moving.txt"), []byte("m"), 0o644))
+		require.NoError(t, b.CopyFile("moving.txt", "moved.txt", true))
+		_, err := os.Stat(filepath.Join(base, "moving.txt"))
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("missing source", func(t *testing.T) {
+		assert.ErrorContains(t, b.CopyFile("absent.txt", "x.txt", false), "failed to open source file")
+	})
+
+	t.Run("destination that is a directory", func(t *testing.T) {
+		require.NoError(t, os.MkdirAll(filepath.Join(base, "adir"), 0o755))
+		assert.ErrorContains(t, b.CopyFile("src.txt", "adir", false), "failed to create destination file")
+	})
+
+	t.Run("read-only backend refuses copies", func(t *testing.T) {
+		ro := createTestBackend(t, base, true)
+		assert.ErrorContains(t, ro.CopyFile("src.txt", "other.txt", false), "read-only")
+	})
+
+	t.Run("upload below a regular file cannot create its directory", func(t *testing.T) {
+		require.NoError(t, os.WriteFile(filepath.Join(base, "blocker"), []byte("file"), 0o644))
+		err := b.PutFile("blocker/child.txt", strings.NewReader("x"), 1)
+		assert.ErrorContains(t, err, "failed to create directory")
+	})
+
+	t.Run("recursive listing of a missing directory fails", func(t *testing.T) {
+		_, err := b.ListFiles("no-such-dir", true)
+		assert.Error(t, err)
+	})
+
+	t.Run("stat of a missing file fails", func(t *testing.T) {
+		_, err := b.StatFile("no-such-file")
+		assert.Error(t, err)
+	})
+
+	t.Run("streaming upload of unknown size is verified by the bytes written", func(t *testing.T) {
+		require.NoError(t, b.PutFile("streamed.bin", strings.NewReader("streamed-data"), -1))
+		info, err := b.StatFile("streamed.bin")
+		require.NoError(t, err)
+		assert.Equal(t, int64(len("streamed-data")), info.Size)
+	})
+
+	t.Run("empty upload with a zero declared size", func(t *testing.T) {
+		require.NoError(t, b.PutFile("empty.txt", strings.NewReader(""), 0))
+		info, err := b.StatFile("empty.txt")
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), info.Size)
+	})
+
+	t.Run("stat reports directories", func(t *testing.T) {
+		require.NoError(t, b.MakeDir("statdir"))
+		info, err := b.StatFile("statdir")
+		require.NoError(t, err)
+		assert.True(t, info.IsDir)
+	})
+}

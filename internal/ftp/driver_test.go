@@ -1,6 +1,8 @@
 package ftp
 
 import (
+	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -10,8 +12,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"goftp.io/server/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -665,5 +670,431 @@ func TestKubeLogger_PrintCommand_PasswordRedaction(t *testing.T) {
 		logger.PrintCommand("test-session", "PASS", "secretpassword")
 		logger.PrintCommand("test-session", "USER", "testuser")
 		logger.PrintCommand("test-session", "ACCT", "secretaccount")
+	})
+}
+
+// Regression: closing a connection must drop the session's user mapping, or
+// the map grows for the life of the process.
+func TestKubeDriver_CloseClearsSessionUser(t *testing.T) {
+	auth := &KubeAuth{}
+	auth.setSessionUser("ftp-session-192.0.2.1:50000", "alice")
+	assert.Equal(t, "alice", auth.GetSessionUser("ftp-session-192.0.2.1:50000"))
+
+	driver := &KubeDriver{auth: auth, sessionID: "ftp-session-192.0.2.1:50000"}
+	assert.NoError(t, driver.Close())
+	assert.Empty(t, auth.GetSessionUser("ftp-session-192.0.2.1:50000"))
+}
+
+// Close on a driver that never finished Init must not panic.
+func TestKubeDriver_CloseWithoutInit(t *testing.T) {
+	driver := &KubeDriver{}
+	assert.NotPanics(t, func() {
+		assert.NoError(t, driver.Close())
+	})
+}
+
+// Close cancels the per-session context so in-flight work stops.
+func TestKubeDriver_CloseCancelsSessionContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	driver := &KubeDriver{sessionCtx: ctx, sessionCancel: cancel}
+
+	assert.NoError(t, driver.Close())
+	assert.ErrorIs(t, ctx.Err(), context.Canceled)
+}
+
+// newOpsTestDriver returns a driver whose user is already initialised, so the
+// operations under test go straight to the mock storage.
+func newOpsTestDriver(chroot bool) (*KubeDriver, *MockStorage) {
+	ms := &MockStorage{}
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice", Namespace: "default"},
+		Spec: ftpv1.UserSpec{
+			Username:      "alice",
+			HomeDirectory: "/home/alice",
+			Chroot:        chroot,
+			Permissions:   ftpv1.UserPermissions{Read: true, Write: true, Delete: true, List: true},
+		},
+	}
+	return &KubeDriver{authenticatedUser: "alice", user: user, storageImpl: ms}, ms
+}
+
+func TestKubeDriver_Operations_PassThroughToStorage(t *testing.T) {
+	boom := errors.New("backend unavailable")
+
+	t.Run("stat", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		info := &MockFileInfo{name: "a.txt", size: 3}
+		ms.On("Stat", "a.txt").Return(info, nil).Once()
+		got, err := d.Stat(nil, "a.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, info, got)
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("stat error is returned unchanged", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("Stat", "a.txt").Return(&MockFileInfo{}, boom).Once()
+		_, err := d.Stat(nil, "a.txt")
+		assert.ErrorIs(t, err, boom)
+	})
+
+	t.Run("list", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("ListDir", "docs", mock.Anything).Return(nil).Once()
+		assert.NoError(t, d.ListDir(nil, "docs", func(os.FileInfo) error { return nil }))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("list error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("ListDir", "docs", mock.Anything).Return(boom).Once()
+		assert.ErrorIs(t, d.ListDir(nil, "docs", func(os.FileInfo) error { return nil }), boom)
+	})
+
+	t.Run("rmdir", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("DeleteDir", "old").Return(nil).Once()
+		assert.NoError(t, d.DeleteDir(nil, "old"))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("rmdir error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("DeleteDir", "old").Return(boom).Once()
+		assert.ErrorIs(t, d.DeleteDir(nil, "old"), boom)
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("DeleteFile", "a.txt").Return(nil).Once()
+		assert.NoError(t, d.DeleteFile(nil, "a.txt"))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("delete error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("DeleteFile", "a.txt").Return(boom).Once()
+		assert.ErrorIs(t, d.DeleteFile(nil, "a.txt"), boom)
+	})
+
+	t.Run("rename", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("Rename", "a.txt", "b.txt").Return(nil).Once()
+		assert.NoError(t, d.Rename(nil, "a.txt", "b.txt"))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("rename error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("Rename", "a.txt", "b.txt").Return(boom).Once()
+		assert.ErrorIs(t, d.Rename(nil, "a.txt", "b.txt"), boom)
+	})
+
+	t.Run("mkdir", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("MakeDir", "new").Return(nil).Once()
+		assert.NoError(t, d.MakeDir(nil, "new"))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("mkdir error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("MakeDir", "new").Return(boom).Once()
+		assert.ErrorIs(t, d.MakeDir(nil, "new"), boom)
+	})
+
+	t.Run("download", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("GetFile", "a.txt", int64(0)).
+			Return(int64(5), io.NopCloser(strings.NewReader("hello")), nil).Once()
+		size, reader, err := d.GetFile(nil, "a.txt", 0)
+		assert.NoError(t, err)
+		assert.Equal(t, int64(5), size)
+		data, _ := io.ReadAll(reader)
+		assert.Equal(t, "hello", string(data))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("download error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("GetFile", "a.txt", int64(0)).Return(int64(0), io.NopCloser(strings.NewReader("")), boom).Once()
+		_, _, err := d.GetFile(nil, "a.txt", 0)
+		assert.ErrorIs(t, err, boom)
+	})
+
+	t.Run("upload", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("PutFile", "up.txt", mock.Anything, int64(0)).Return(int64(4), nil).Once()
+		n, err := d.PutFile(nil, "up.txt", strings.NewReader("data"), 0)
+		assert.NoError(t, err)
+		assert.Equal(t, int64(4), n)
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("upload error", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("PutFile", "up.txt", mock.Anything, int64(0)).Return(int64(0), boom).Once()
+		_, err := d.PutFile(nil, "up.txt", strings.NewReader("data"), 0)
+		assert.ErrorIs(t, err, boom)
+	})
+
+	t.Run("owner, group and mode", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		owner, err := d.GetOwner("a.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "alice", owner)
+
+		group, err := d.GetGroup("a.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, "ftp", group)
+
+		ms.On("Stat", "a.txt").Return(&MockFileInfo{name: "a.txt", mode: 0o640}, nil).Once()
+		mode, err := d.GetMode("a.txt")
+		assert.NoError(t, err)
+		assert.Equal(t, fs.FileMode(0o640), mode)
+		ms.AssertExpectations(t)
+	})
+}
+
+// With chroot enabled, every path is resolved inside the home directory before
+// it reaches storage, and escapes are refused without calling storage at all.
+func TestKubeDriver_Operations_ChrootResolvesAndDenies(t *testing.T) {
+	t.Run("relative and absolute paths resolve under home", func(t *testing.T) {
+		d, ms := newOpsTestDriver(true)
+		ms.On("MakeDir", "/home/alice/docs").Return(nil).Once()
+		ms.On("DeleteFile", "/home/alice/abs.txt").Return(nil).Once()
+		assert.NoError(t, d.MakeDir(nil, "docs"))
+		assert.NoError(t, d.DeleteFile(nil, "/abs.txt"))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("escape is denied before storage", func(t *testing.T) {
+		d, ms := newOpsTestDriver(true)
+		_, err := d.Stat(nil, "../../../etc/passwd")
+		assert.ErrorContains(t, err, "access denied")
+		assert.ErrorContains(t, d.DeleteDir(nil, "../../etc"), "access denied")
+		ms.AssertNotCalled(t, "Stat", mock.Anything)
+		ms.AssertNotCalled(t, "DeleteDir", mock.Anything)
+
+		// An absolute path that climbs out is re-rooted under home, not escaped
+		ms.On("MakeDir", "/home/alice/tmp").Return(nil).Once()
+		assert.NoError(t, d.MakeDir(nil, "/../../tmp"))
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("rename checks both paths", func(t *testing.T) {
+		d, ms := newOpsTestDriver(true)
+		err := d.Rename(nil, "a.txt", "../../escape.txt")
+		assert.ErrorContains(t, err, "access denied")
+		ms.AssertNotCalled(t, "Rename", mock.Anything, mock.Anything)
+	})
+
+	t.Run("upload and download resolve under home", func(t *testing.T) {
+		d, ms := newOpsTestDriver(true)
+		ms.On("PutFile", "/home/alice/up.txt", mock.Anything, int64(0)).Return(int64(1), nil).Once()
+		ms.On("GetFile", "/home/alice/up.txt", int64(0)).
+			Return(int64(1), io.NopCloser(strings.NewReader("x")), nil).Once()
+		_, err := d.PutFile(nil, "up.txt", strings.NewReader("x"), 0)
+		assert.NoError(t, err)
+		_, r, err := d.GetFile(nil, "up.txt", 0)
+		assert.NoError(t, err)
+		_ = r.Close()
+		ms.AssertExpectations(t)
+	})
+}
+
+// ChOwner, ChGroup and ChMode deliberately succeed without changing anything,
+// so that clients issuing SITE commands are not blocked. This pins that choice:
+// the stored file mode must not change and no error must be returned.
+func TestKubeDriver_ChangeAttributesAreNoOps(t *testing.T) {
+	driver := &KubeDriver{}
+	assert.NoError(t, driver.ChOwner("/a.txt", "root"))
+	assert.NoError(t, driver.ChGroup("/a.txt", "wheel"))
+	assert.NoError(t, driver.ChMode("/a.txt", 0o777))
+}
+
+// newInitTestAuth returns an auth backed by an empty fake client, so cache
+// misses resolve to "no such user" rather than reaching a real cluster.
+func newInitTestAuth(t *testing.T, objs ...client.Object) *KubeAuth {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, ftpv1.AddToScheme(scheme))
+	return NewKubeAuth(fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build())
+}
+
+func TestKubeDriver_EnsureUserInitialized(t *testing.T) {
+	t.Run("no authenticated user", func(t *testing.T) {
+		d := &KubeDriver{auth: newInitTestAuth(t), sessionCtx: context.Background()}
+		err := d.ensureUserInitialized()
+		assert.ErrorContains(t, err, "user not authenticated")
+	})
+
+	t.Run("authenticated user missing from the auth cache", func(t *testing.T) {
+		d := &KubeDriver{auth: newInitTestAuth(t), authenticatedUser: "ghost", sessionCtx: context.Background()}
+		err := d.ensureUserInitialized()
+		assert.ErrorContains(t, err, "user ghost not found in auth cache")
+	})
+
+	t.Run("storage initialisation failure is reported and not cached", func(t *testing.T) {
+		u := &ftpv1.User{
+			ObjectMeta: metav1.ObjectMeta{Name: "carol", Namespace: "default"},
+			Spec: ftpv1.UserSpec{
+				Username:      "carol",
+				HomeDirectory: "/carol",
+				Backend:       ftpv1.BackendReference{Kind: "FilesystemBackend", Name: "missing-backend"},
+			},
+		}
+		auth := newInitTestAuth(t)
+		auth.userCache.Store("carol", u)
+		d := &KubeDriver{client: auth.client, auth: auth, authenticatedUser: "carol", sessionCtx: context.Background()}
+
+		err := d.ensureUserInitialized()
+		assert.ErrorContains(t, err, "failed to initialize storage for user carol")
+		assert.Nil(t, d.storageImpl)
+		assert.Nil(t, d.user, "a failed initialisation must not leave a half-set driver")
+	})
+
+	t.Run("success sets user and storage, then takes the fast path", func(t *testing.T) {
+		backend := &ftpv1.FilesystemBackend{
+			ObjectMeta: metav1.ObjectMeta{Name: "fs", Namespace: "default"},
+			Spec:       ftpv1.FilesystemBackendSpec{BasePath: t.TempDir()},
+		}
+		u := &ftpv1.User{
+			ObjectMeta: metav1.ObjectMeta{Name: "dave", Namespace: "default"},
+			Spec: ftpv1.UserSpec{
+				Username:      "dave",
+				HomeDirectory: "/dave",
+				Permissions:   ftpv1.UserPermissions{Read: true, List: true},
+				Backend:       ftpv1.BackendReference{Kind: "FilesystemBackend", Name: "fs"},
+			},
+		}
+		auth := newInitTestAuth(t, backend)
+		auth.userCache.Store("dave", u)
+		d := &KubeDriver{client: auth.client, auth: auth, authenticatedUser: "dave", sessionCtx: context.Background()}
+
+		require.NoError(t, d.ensureUserInitialized())
+		assert.NotNil(t, d.storageImpl)
+		assert.Equal(t, "dave", d.user.Spec.Username)
+		assert.Equal(t, "FilesystemBackend", d.getBackendType())
+
+		// Second call returns straight away without consulting the cache again
+		d.authenticatedUser = ""
+		assert.NoError(t, d.ensureUserInitialized())
+	})
+}
+
+func TestKubeDriver_GetBackendTypeWithoutUser(t *testing.T) {
+	assert.Equal(t, "unknown", (&KubeDriver{}).getBackendType())
+}
+
+func TestKubeDriverFactory_NewDriverCarriesDependencies(t *testing.T) {
+	auth := newInitTestAuth(t)
+	f := &KubeDriverFactory{client: auth.client, auth: auth}
+
+	d, err := f.NewDriver()
+	require.NoError(t, err)
+	kd, ok := d.(*KubeDriver)
+	require.True(t, ok, "got %T", d)
+	assert.Equal(t, auth, kd.auth)
+	assert.Equal(t, auth.client, kd.client)
+	assert.Empty(t, kd.authenticatedUser, "user is set later, after authentication")
+}
+
+// Every operation must refuse to run for a session whose user cannot be
+// initialised, and must not reach storage. Run once plain and once with tracing
+// enabled, so the span branches are exercised too.
+func TestKubeDriver_Operations_RefuseWithoutInitialisedUser(t *testing.T) {
+	run := func(t *testing.T) {
+		d := &KubeDriver{auth: newInitTestAuth(t), authenticatedUser: "ghost", sessionCtx: context.Background()}
+		ctx := (*server.Context)(nil)
+		noop := func(os.FileInfo) error { return nil }
+
+		_, err := d.Stat(ctx, "a")
+		assert.Error(t, err)
+		assert.Error(t, d.ListDir(ctx, "a", noop))
+		assert.Error(t, d.DeleteDir(ctx, "a"))
+		assert.Error(t, d.DeleteFile(ctx, "a"))
+		assert.Error(t, d.Rename(ctx, "a", "b"))
+		assert.Error(t, d.MakeDir(ctx, "a"))
+		assert.Error(t, d.ChangeDir(ctx, "a"))
+		_, _, err = d.GetFile(ctx, "a", 0)
+		assert.Error(t, err)
+		_, err = d.PutFile(ctx, "a", strings.NewReader("x"), 0)
+		assert.Error(t, err)
+		_, err = d.PutFile(ctx, "a", strings.NewReader("x"), 5) // resumed upload path
+		assert.Error(t, err)
+	}
+
+	t.Run("plain", run)
+	t.Run("with tracing enabled", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317")
+		run(t)
+	})
+}
+
+// With tracing enabled, every storage failure must still be returned to the
+// client unchanged (after the span records it).
+func TestKubeDriver_Operations_StorageErrorsWithTracing(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317")
+	boom := errors.New("backend down")
+	noop := func(os.FileInfo) error { return nil }
+
+	t.Run("stat", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("Stat", "a").Return(&MockFileInfo{}, boom).Once()
+		_, err := d.Stat(nil, "a")
+		assert.ErrorIs(t, err, boom)
+	})
+	t.Run("list", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("ListDir", "a", mock.Anything).Return(boom).Once()
+		assert.ErrorIs(t, d.ListDir(nil, "a", noop), boom)
+	})
+	t.Run("rmdir", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("DeleteDir", "a").Return(boom).Once()
+		assert.ErrorIs(t, d.DeleteDir(nil, "a"), boom)
+	})
+	t.Run("delete", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("DeleteFile", "a").Return(boom).Once()
+		assert.ErrorIs(t, d.DeleteFile(nil, "a"), boom)
+	})
+	t.Run("rename", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("Rename", "a", "b").Return(boom).Once()
+		assert.ErrorIs(t, d.Rename(nil, "a", "b"), boom)
+	})
+	t.Run("mkdir", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("MakeDir", "a").Return(boom).Once()
+		assert.ErrorIs(t, d.MakeDir(nil, "a"), boom)
+	})
+	t.Run("download", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("GetFile", "a", int64(0)).Return(int64(0), io.NopCloser(strings.NewReader("")), boom).Once()
+		_, _, err := d.GetFile(nil, "a", 0)
+		assert.ErrorIs(t, err, boom)
+	})
+	t.Run("upload", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("PutFile", "a", mock.Anything, int64(0)).Return(int64(0), boom).Once()
+		_, err := d.PutFile(nil, "a", strings.NewReader("x"), 0)
+		assert.ErrorIs(t, err, boom)
+	})
+	t.Run("append is forced to upload and still reports errors", func(t *testing.T) {
+		d, ms := newOpsTestDriver(false)
+		ms.On("PutFile", "a", mock.Anything, int64(0)).Return(int64(0), boom).Once()
+		_, err := d.PutFile(nil, "a", strings.NewReader("x"), 7)
+		assert.ErrorIs(t, err, boom)
+	})
+	t.Run("chroot denial on download and upload", func(t *testing.T) {
+		d, ms := newOpsTestDriver(true)
+		_, _, err := d.GetFile(nil, "../../etc/shadow", 0)
+		assert.ErrorContains(t, err, "access denied")
+		_, err = d.PutFile(nil, "../../etc/x", strings.NewReader("x"), 0)
+		assert.ErrorContains(t, err, "access denied")
+		ms.AssertNotCalled(t, "GetFile", mock.Anything, mock.Anything)
+		ms.AssertNotCalled(t, "PutFile", mock.Anything, mock.Anything, mock.Anything)
 	})
 }
