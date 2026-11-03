@@ -14,6 +14,9 @@ KubeFTPd is configured with environment variables and command-line flags. The He
 | `FTP_PUBLIC_IP` | IP advertised in PASV responses (set to the LoadBalancer IP) | `""` |
 | `FTP_WELCOME_MESSAGE` | FTP welcome message | built-in message |
 | `LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` | `info` |
+| `LOG_FORMAT` | Log output: `json` or `text` | `json` |
+| `FTP_IDLE_TIMEOUT` | Close a control connection that sends nothing for this many seconds (`0` disables) | `0` |
+| `FTP_MAX_CONNECTIONS` | Maximum concurrent control connections; further clients get a `421` reply (`0` means no limit) | `0` |
 | `HTTP_BIND_ADDRESS` | Address for metrics, health and status (`host:port`) | `:8080` |
 | `ENABLE_PROFILING` | Enable Go profiling endpoints | `false` |
 
@@ -61,11 +64,6 @@ Tracing is enabled only when an `OTEL_*` variable is set.
 | `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes (read by the OpenTelemetry SDK) |
 
 See [monitoring.md](monitoring.md#tracing) for the spans emitted.
-
-## Known issues
-
-- The Helm values `ftp.settings.idleTimeout` and `ftp.settings.maxConnections` are passed to the controller as `FTP_IDLE_TIMEOUT` and `FTP_MAX_CONNECTIONS`, but the controller does not read those variables yet, so the values have no effect.
-- `config/manager` sets `LOG_FORMAT`, which the controller does not read. Logs are always structured JSON.
 
 ## Security hardening
 
