@@ -21,16 +21,15 @@ var (
 			Name: "kubeftpd_connections_total",
 			Help: "Total number of FTP connections",
 		},
-		[]string{"username", "client_ip"},
+		[]string{"client_ip"},
 	)
 
-	ConnectionDuration = promauto.NewHistogramVec(
+	ConnectionDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "kubeftpd_connection_duration_seconds",
 			Help:    "Duration of FTP connections in seconds",
 			Buckets: []float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600},
 		},
-		[]string{"username"},
 	)
 
 	// File operation metrics
@@ -39,7 +38,7 @@ var (
 			Name: "kubeftpd_file_operations_total",
 			Help: "Total number of file operations",
 		},
-		[]string{"username", "operation", "backend_type", "result"},
+		[]string{"operation", "backend_type", "result"},
 	)
 
 	FileTransferBytes = promauto.NewCounterVec(
@@ -47,7 +46,7 @@ var (
 			Name: "kubeftpd_file_transfer_bytes_total",
 			Help: "Total bytes transferred",
 		},
-		[]string{"username", "direction", "backend_type"},
+		[]string{"direction", "backend_type"},
 	)
 
 	FileTransferDuration = promauto.NewHistogramVec(
@@ -56,7 +55,7 @@ var (
 			Help:    "Duration of file transfers in seconds",
 			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 300},
 		},
-		[]string{"username", "operation", "backend_type"},
+		[]string{"operation", "backend_type"},
 	)
 
 	// User activity metrics
@@ -68,13 +67,12 @@ var (
 		[]string{"result"},
 	)
 
-	UserSessionDuration = promauto.NewHistogramVec(
+	UserSessionDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "kubeftpd_user_session_duration_seconds",
 			Help:    "Duration of user sessions in seconds",
 			Buckets: []float64{60, 300, 600, 1800, 3600, 7200, 14400},
 		},
-		[]string{"username"},
 	)
 
 	// Backend metrics
@@ -113,27 +111,28 @@ var (
 	)
 )
 
-// RecordConnection records a new connection
-func RecordConnection(username, clientIP string) {
+// RecordConnection records a new connection. Usernames are deliberately not
+// used as labels: they would let anyone with metrics access enumerate accounts.
+func RecordConnection(clientIP string) {
 	ActiveConnections.Inc()
-	ConnectionsTotal.WithLabelValues(username, clientIP).Inc()
+	ConnectionsTotal.WithLabelValues(clientIP).Inc()
 }
 
 // RecordConnectionClosed records a connection closure
-func RecordConnectionClosed(username string, duration time.Duration) {
+func RecordConnectionClosed(duration time.Duration) {
 	ActiveConnections.Dec()
-	ConnectionDuration.WithLabelValues(username).Observe(duration.Seconds())
+	ConnectionDuration.Observe(duration.Seconds())
 }
 
 // RecordFileOperation records a file operation
-func RecordFileOperation(username, operation, backendType, result string) {
-	FileOperationsTotal.WithLabelValues(username, operation, backendType, result).Inc()
+func RecordFileOperation(operation, backendType, result string) {
+	FileOperationsTotal.WithLabelValues(operation, backendType, result).Inc()
 }
 
 // RecordFileTransfer records file transfer metrics
-func RecordFileTransfer(username, direction, backendType string, bytes int64, duration time.Duration) {
-	FileTransferBytes.WithLabelValues(username, direction, backendType).Add(float64(bytes))
-	FileTransferDuration.WithLabelValues(username, direction, backendType).Observe(duration.Seconds())
+func RecordFileTransfer(direction, backendType string, bytes int64, duration time.Duration) {
+	FileTransferBytes.WithLabelValues(direction, backendType).Add(float64(bytes))
+	FileTransferDuration.WithLabelValues(direction, backendType).Observe(duration.Seconds())
 }
 
 // RecordUserLogin records a user login attempt
@@ -142,8 +141,8 @@ func RecordUserLogin(result string) {
 }
 
 // RecordUserSession records user session metrics
-func RecordUserSession(username string, duration time.Duration) {
-	UserSessionDuration.WithLabelValues(username).Observe(duration.Seconds())
+func RecordUserSession(duration time.Duration) {
+	UserSessionDuration.Observe(duration.Seconds())
 }
 
 // RecordBackendOperation records backend operation metrics
