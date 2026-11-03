@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **WebDAV resumed downloads**: a download resumed at an offset (REST then RETR) returned the whole file from byte 0; it now starts at the requested offset, and an offset past the end of the file is rejected
 - **WebDAV existence checks**: an unreachable server or a server error was reported as "does not exist"; only a 404 now means missing, and other failures are returned as errors
 - **MinIO directory listings**: the directory marker object (`dir/`) was listed as an entry with an empty name; it is now skipped
+- **Chart passive ports**: the Service targeted passive ports by name, but the pod declared them only when the legacy `ftp.passive.enabled` flag was set, so a default install rendered a Service with no matching container ports; the pod now declares the `ftp.service.passivePortRange` ports unconditionally
 - **Docs accuracy**: install command and chart version, Go version, metric names, tracing span names, passive port range, log format, and the CI badge
 - **Examples**: credentials replaced with `<change-me>` placeholders; ServiceMonitor matches the chart's HTTP Service; RBAC `resourceNames` no longer uses unsupported wildcards
 - **Password guidance**: the operations doc no longer prints generated passwords to the terminal, and no longer claims compliance checks that weren't performed
