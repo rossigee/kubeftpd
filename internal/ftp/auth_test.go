@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -752,4 +753,124 @@ func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
 	assert.True(t, foundFailures, "kubeftpd_auth_failures_total must be present in gathered metrics")
 	assert.True(t, foundAttempts, "kubeftpd_auth_attempts_total must be present in gathered metrics")
 	assert.True(t, foundLogins, "kubeftpd_user_logins_total must be present in gathered metrics")
+}
+
+func TestKubeAuth_PasswordFromSecret(t *testing.T) {
+	ns := "tenants"
+	other := "shared"
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: ns},
+		Data: map[string][]byte{
+			"password": []byte("default-key"),
+			"ftp-key":  []byte("custom-key"),
+		},
+	}
+	sharedSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: other},
+		Data:       map[string][]byte{"password": []byte("from-shared")},
+	}
+	auth := NewKubeAuth(fake.NewClientBuilder().WithObjects(secret, sharedSecret).Build())
+	ctx := context.Background()
+
+	t.Run("nil reference", func(t *testing.T) {
+		_, err := auth.getPasswordFromSecret(ctx, nil, ns)
+		assert.ErrorContains(t, err, "secret reference is nil")
+	})
+
+	t.Run("default key is password", func(t *testing.T) {
+		pw, err := auth.getPasswordFromSecret(ctx, &ftpv1.UserSecretRef{Name: "creds"}, ns)
+		require.NoError(t, err)
+		assert.Equal(t, "default-key", pw)
+	})
+
+	t.Run("custom key", func(t *testing.T) {
+		pw, err := auth.getPasswordFromSecret(ctx, &ftpv1.UserSecretRef{Name: "creds", Key: "ftp-key"}, ns)
+		require.NoError(t, err)
+		assert.Equal(t, "custom-key", pw)
+	})
+
+	t.Run("explicit namespace overrides the user's", func(t *testing.T) {
+		explicit := other
+		pw, err := auth.getPasswordFromSecret(ctx, &ftpv1.UserSecretRef{Name: "creds", Namespace: &explicit}, ns)
+		require.NoError(t, err)
+		assert.Equal(t, "from-shared", pw)
+	})
+
+	t.Run("missing secret", func(t *testing.T) {
+		_, err := auth.getPasswordFromSecret(ctx, &ftpv1.UserSecretRef{Name: "absent"}, ns)
+		assert.ErrorContains(t, err, "failed to get secret tenants/absent")
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		_, err := auth.getPasswordFromSecret(ctx, &ftpv1.UserSecretRef{Name: "creds", Key: "nope"}, ns)
+		assert.ErrorContains(t, err, "password not found in secret with key nope")
+	})
+}
+
+func TestKubeAuth_AdminAndRegularPasswordChecks(t *testing.T) {
+	ns := "tenants"
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "admin-secret", Namespace: ns},
+		Data:       map[string][]byte{"password": []byte("s3cret-admin")},
+	}
+	auth := NewKubeAuth(fake.NewClientBuilder().WithObjects(secret).Build())
+	ctx := context.Background()
+
+	t.Run("admin without a passwordSecret is an error", func(t *testing.T) {
+		admin := &ftpv1.User{ObjectMeta: metav1.ObjectMeta{Namespace: ns}}
+		ok, err := auth.checkAdminPassword(ctx, admin, "x")
+		assert.False(t, ok)
+		assert.ErrorContains(t, err, "admin user has no passwordSecret configured")
+	})
+
+	admin := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+		Spec:       ftpv1.UserSpec{PasswordSecret: &ftpv1.UserSecretRef{Name: "admin-secret"}},
+	}
+	t.Run("admin correct password", func(t *testing.T) {
+		ok, err := auth.checkAdminPassword(ctx, admin, "s3cret-admin")
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+	t.Run("admin wrong password", func(t *testing.T) {
+		ok, err := auth.checkAdminPassword(ctx, admin, "guess")
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+	t.Run("admin secret unreadable", func(t *testing.T) {
+		broken := &ftpv1.User{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+			Spec:       ftpv1.UserSpec{PasswordSecret: &ftpv1.UserSecretRef{Name: "gone"}},
+		}
+		ok, err := auth.checkAdminPassword(ctx, broken, "x")
+		assert.False(t, ok)
+		assert.Error(t, err)
+	})
+
+	t.Run("regular plaintext password", func(t *testing.T) {
+		u := &ftpv1.User{ObjectMeta: metav1.ObjectMeta{Namespace: ns}, Spec: ftpv1.UserSpec{Password: "plain-pw"}}
+		ok, err := auth.checkRegularUserPassword(ctx, u, "plain-pw")
+		assert.NoError(t, err)
+		assert.True(t, ok)
+		ok, err = auth.checkRegularUserPassword(ctx, u, "other")
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("regular user resolves its password from a Secret", func(t *testing.T) {
+		u := &ftpv1.User{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+			Spec:       ftpv1.UserSpec{PasswordSecret: &ftpv1.UserSecretRef{Name: "admin-secret"}},
+		}
+		ok, err := auth.checkRegularUserPassword(ctx, u, "s3cret-admin")
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("regular user with no password source is an error", func(t *testing.T) {
+		u := &ftpv1.User{ObjectMeta: metav1.ObjectMeta{Namespace: ns}}
+		ok, err := auth.checkRegularUserPassword(ctx, u, "x")
+		assert.False(t, ok)
+		assert.Error(t, err)
+	})
 }

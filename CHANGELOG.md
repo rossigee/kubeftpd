@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Webhook manifest**: `ValidatingWebhookConfiguration` replaces the invalid `ValidatingAdmissionWebhook` kind, and a duplicated document separator is removed
 - **Git ignore**: the root-only `/kubeftpd` binary pattern no longer hides `charts/kubeftpd` files
+- **WebDAV resumed downloads**: a download resumed at an offset (REST then RETR) returned the whole file from byte 0; it now starts at the requested offset, and an offset past the end of the file is rejected
+- **WebDAV existence checks**: an unreachable server or a server error was reported as "does not exist"; only a 404 now means missing, and other failures are returned as errors
+- **MinIO directory listings**: the directory marker object (`dir/`) was listed as an entry with an empty name; it is now skipped
 
 ### Removed
 - **Cozystack examples and docs**: `examples/cozystack/`, `docs/COZYSTACK_INTEGRATION.md` and the related README sections

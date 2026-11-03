@@ -736,3 +736,61 @@ func TestUserReconciler_validateUser(t *testing.T) {
 		})
 	}
 }
+
+// Deleting a User must remove the finalizer so the object can be garbage collected.
+func TestUserReconciler_HandleUserDeletionRemovesFinalizer(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, ftpv1.AddToScheme(scheme))
+
+	now := metav1.Now()
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "alice",
+			Namespace:         "default",
+			Finalizers:        []string{"ftp.golder.org/finalizer"},
+			DeletionTimestamp: &now,
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(user).Build()
+	reconciler := &UserReconciler{Client: c, Scheme: scheme}
+
+	fetched := &ftpv1.User{}
+	assert.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "alice", Namespace: "default"}, fetched))
+
+	result, err := reconciler.handleUserDeletion(context.Background(), fetched)
+	assert.NoError(t, err)
+	assert.Zero(t, result, "deletion does not requeue")
+	assert.NotContains(t, fetched.Finalizers, "ftp.golder.org/finalizer")
+
+	// Removing the last finalizer from a deleting object lets the API server
+	// delete it; the fake client does the same, so the User is gone.
+	after := &ftpv1.User{}
+	err = c.Get(context.Background(), types.NamespacedName{Name: "alice", Namespace: "default"}, after)
+	assert.True(t, errors.IsNotFound(err), "expected the User to be deleted, got: %v", err)
+}
+
+// updateUserStatus must persist a single condition on the User's status.
+func TestUserReconciler_UpdateUserStatusPersistsCondition(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, ftpv1.AddToScheme(scheme))
+
+	user := &ftpv1.User{ObjectMeta: metav1.ObjectMeta{Name: "bob", Namespace: "default"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(user).WithStatusSubresource(&ftpv1.User{}).Build()
+	reconciler := &UserReconciler{Client: c, Scheme: scheme}
+
+	fetched := &ftpv1.User{}
+	assert.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "bob", Namespace: "default"}, fetched))
+
+	reconciler.updateUserStatus(context.Background(), fetched, metav1.Condition{
+		Type:   "Ready",
+		Status: metav1.ConditionTrue,
+		Reason: "Configured",
+	})
+
+	after := &ftpv1.User{}
+	assert.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "bob", Namespace: "default"}, after))
+	if assert.Len(t, after.Status.Conditions, 1) {
+		assert.Equal(t, "Ready", after.Status.Conditions[0].Type)
+		assert.Equal(t, metav1.ConditionTrue, after.Status.Conditions[0].Status)
+	}
+}

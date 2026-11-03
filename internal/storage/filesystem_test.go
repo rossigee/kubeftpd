@@ -1,13 +1,17 @@
 package storage
 
 import (
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
@@ -74,6 +78,162 @@ func (m *MockFilesystemBackend) GetBasePath() string {
 func (m *MockFilesystemBackend) IsReadOnly() bool {
 	args := m.Called()
 	return args.Bool(0)
+}
+
+// Regression-style coverage for the storage wrapper: permission checks must
+// refuse before the backend is touched, and Stat must report the right mode.
+func TestFilesystemStorage_PermissionsAndFileInfo(t *testing.T) {
+	noPerms := &ftpv1.User{Spec: ftpv1.UserSpec{Username: "nobody", HomeDirectory: "/home/nobody"}}
+	newStorage := func(user *ftpv1.User, b *MockFilesystemBackend) *filesystemStorage {
+		return &filesystemStorage{user: user, backend: b, basePath: user.Spec.HomeDirectory, currentDir: user.Spec.HomeDirectory}
+	}
+
+	t.Run("denied operations never reach the backend", func(t *testing.T) {
+		b := &MockFilesystemBackend{} // no expectations: any call fails the test
+		s := newStorage(noPerms, b)
+
+		assert.ErrorContains(t, s.ListDir("d", func(os.FileInfo) error { return nil }), "list permission denied")
+		_, _, err := s.GetFile("f", 0)
+		assert.ErrorContains(t, err, "read permission denied")
+		_, err = s.PutFile("f", strings.NewReader("x"), 0)
+		assert.ErrorContains(t, err, "write permission denied")
+		assert.ErrorContains(t, s.MakeDir("d"), "write permission denied")
+		assert.ErrorContains(t, s.Rename("a", "b"), "write permission denied")
+		assert.ErrorContains(t, s.DeleteFile("f"), "delete permission denied")
+		assert.ErrorContains(t, s.DeleteDir("d"), "delete permission denied")
+		b.AssertNotCalled(t, "ListFiles", mock.Anything, mock.Anything)
+		b.AssertNotCalled(t, "GetFile", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("stat reports directory and file modes", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		s := newStorage(createTestUser(), b)
+
+		b.On("StatFile", "/home/testuser/dir").Return(&backends.FileInfo{Name: "dir", IsDir: true}, nil).Once()
+		info, err := s.Stat("dir")
+		require.NoError(t, err)
+		assert.True(t, info.IsDir())
+		assert.Equal(t, fs.ModeDir|0o755, info.Mode())
+		assert.Equal(t, "dir", info.Name())
+
+		b.On("StatFile", "/home/testuser/f.txt").Return(&backends.FileInfo{Name: "f.txt", Size: 9, ModTime: time.Unix(1, 0)}, nil).Once()
+		info, err = s.Stat("f.txt")
+		require.NoError(t, err)
+		assert.False(t, info.IsDir())
+		assert.Equal(t, fs.FileMode(0o644), info.Mode())
+		assert.Equal(t, int64(9), info.Size())
+		assert.Equal(t, time.Unix(1, 0), info.ModTime())
+		b.AssertExpectations(t)
+	})
+
+	t.Run("stat failure is reported as not found", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		s := newStorage(createTestUser(), b)
+		b.On("StatFile", "/home/testuser/missing").Return(nil, errors.New("gone")).Once()
+		_, err := s.Stat("missing")
+		assert.ErrorContains(t, err, "file not found: missing")
+	})
+
+	t.Run("listing passes entries to the callback and stops on its error", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		s := newStorage(createTestUser(), b)
+		b.On("ListFiles", "/home/testuser/d", false).
+			Return([]backends.FileInfo{{Name: "one"}, {Name: "two"}}, nil).Once()
+
+		stop := errors.New("stop")
+		calls := 0
+		err := s.ListDir("d", func(os.FileInfo) error {
+			calls++
+			return stop
+		})
+		assert.ErrorIs(t, err, stop)
+		assert.Equal(t, 1, calls)
+	})
+
+	t.Run("file info accessors and close", func(t *testing.T) {
+		now := time.Unix(42, 0)
+		fi := &filesystemFileInfo{name: "n", size: 7, mode: 0o600, modTime: now, isDir: true}
+		assert.Equal(t, "n", fi.Name())
+		assert.Equal(t, int64(7), fi.Size())
+		assert.Equal(t, fs.FileMode(0o600), fi.Mode())
+		assert.Equal(t, now, fi.ModTime())
+		assert.True(t, fi.IsDir())
+		assert.Empty(t, fi.Owner())
+		assert.Empty(t, fi.Group())
+		assert.Nil(t, fi.Sys())
+		assert.NoError(t, newStorage(createTestUser(), &MockFilesystemBackend{}).Close())
+	})
+}
+
+// Error paths of the filesystem storage: each backend failure is reported with
+// the storage-level context, and directory-only rules are enforced.
+func TestFilesystemStorage_BackendFailures(t *testing.T) {
+	boom := errors.New("disk error")
+	user := createTestUser()
+	newStorage := func(b *MockFilesystemBackend) *filesystemStorage {
+		return &filesystemStorage{user: user, backend: b, basePath: "/home/testuser", currentDir: "/home/testuser"}
+	}
+
+	t.Run("cd to a missing directory", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("StatFile", "/home/testuser/nope").Return(nil, boom).Once()
+		assert.ErrorContains(t, newStorage(b).ChangeDir("nope"), "directory not found: nope")
+	})
+
+	t.Run("cd to a regular file", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("StatFile", "/home/testuser/f.txt").Return(&backends.FileInfo{Name: "f.txt"}, nil).Once()
+		assert.ErrorContains(t, newStorage(b).ChangeDir("f.txt"), "not a directory: f.txt")
+	})
+
+	t.Run("download of a directory is refused", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("StatFile", "/home/testuser/d").Return(&backends.FileInfo{IsDir: true}, nil).Once()
+		_, _, err := newStorage(b).GetFile("d", 0)
+		assert.ErrorContains(t, err, "cannot download directory: d")
+	})
+
+	t.Run("download backend failure is wrapped", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("StatFile", "/home/testuser/f").Return(&backends.FileInfo{Size: 4}, nil).Once()
+		b.On("GetFile", "/home/testuser/f", int64(0), int64(4)).
+			Return(io.NopCloser(strings.NewReader("")), boom).Once()
+		_, _, err := newStorage(b).GetFile("f", 0)
+		assert.ErrorContains(t, err, "failed to get file")
+	})
+
+	t.Run("download from an offset past the end reads nothing", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("StatFile", "/home/testuser/f").Return(&backends.FileInfo{Size: 4}, nil).Once()
+		b.On("GetFile", "/home/testuser/f", int64(9), int64(0)).
+			Return(io.NopCloser(strings.NewReader("")), nil).Once()
+		size, rc, err := newStorage(b).GetFile("f", 9)
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), size, "size still reports the whole file")
+		_ = rc.Close()
+	})
+
+	t.Run("listing backend failure is wrapped", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("ListFiles", "/home/testuser/d", false).Return([]backends.FileInfo(nil), boom).Once()
+		err := newStorage(b).ListDir("d", func(os.FileInfo) error { return nil })
+		assert.ErrorContains(t, err, "failed to list directory")
+	})
+
+	t.Run("mutation backend failures are returned", func(t *testing.T) {
+		b := &MockFilesystemBackend{}
+		b.On("IsReadOnly").Return(false)
+		b.On("RemoveFile", "/home/testuser/f").Return(boom).Once()
+		b.On("RemoveDir", "/home/testuser/d", true).Return(boom).Once()
+		b.On("CopyFile", "/home/testuser/a", "/home/testuser/b", true).Return(boom).Once()
+		b.On("MakeDir", "/home/testuser/m").Return(boom).Once()
+		s := newStorage(b)
+		assert.ErrorIs(t, s.DeleteFile("f"), boom)
+		assert.ErrorIs(t, s.DeleteDir("d"), boom)
+		assert.ErrorIs(t, s.Rename("a", "b"), boom)
+		assert.ErrorIs(t, s.MakeDir("m"), boom)
+		b.AssertExpectations(t)
+	})
 }
 
 func createTestUser() *ftpv1.User {

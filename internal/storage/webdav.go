@@ -142,10 +142,23 @@ func (s *webdavStorage) GetFile(filePath string, offset int64) (int64, io.ReadCl
 		return 0, nil, fmt.Errorf("file not found: %s", filePath)
 	}
 
+	if offset < 0 || offset > info.Size {
+		return 0, nil, fmt.Errorf("offset %d out of range for file of size %d", offset, info.Size)
+	}
+
 	// Open file for reading
 	reader, err := s.backend.Open(fullPath)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to open file: %w", err)
+	}
+
+	// WebDAV has no ranged read in this client, so skip to the offset.
+	// The reported size stays the whole file, as the other storages do.
+	if offset > 0 {
+		if _, err := io.CopyN(io.Discard, reader, offset); err != nil {
+			_ = reader.Close()
+			return 0, nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
+		}
 	}
 
 	return info.Size, reader, nil
