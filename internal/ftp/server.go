@@ -629,9 +629,15 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	traceCtx := context.Background()
 	var span trace.Span
 
+	// goftp passes -1 for APPE and for STOR without REST, and the REST position
+	// otherwise. APPE is identified by the command name; a REST position is a
+	// resume point. Plain STOR overwrites.
+	appendToExisting := offset == -1 && ctx != nil && ctx.Cmd == "APPE"
+	resumeAt := max(offset, 0)
+	append := appendToExisting || resumeAt > 0
+
 	uploadType := "UPLOAD"
 	operation := "ftp.upload"
-	append := offset > 0
 	if append {
 		uploadType = "APPEND"
 		operation = "ftp.append"
@@ -653,13 +659,8 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	username := driver.getAuthenticatedUsername()
 	logger.Info("FTP upload operation", "username", username, "operation", uploadType, "path", path, "offset", offset)
 
-	// Storage backends don't support offset mode, so force offset to 0 for complete uploads
-	// This ensures compatibility with FTP clients that may request resumable uploads
-	if offset != 0 {
-		logger.Info("Forcing offset to 0 - backends don't support resumable uploads", "username", username, "path", path, "requested_offset", offset)
-		offset = 0
-		uploadType = "UPLOAD" // Change from APPEND to UPLOAD
-	}
+	// Storage backends only write whole objects, so an append or resume is done
+	// here by rewriting the object: the existing bytes that stay, then the new data.
 	start := time.Now()
 
 	if err := driver.ensureUserInitializedWithContext(ctx); err != nil {
@@ -684,7 +685,14 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		return 0, err
 	}
 
-	size, err := driver.storageImpl.PutFile(resolvedPath, reader, offset)
+	received := &byteCounter{r: reader}
+	source, closeExisting, err := driver.uploadSource(resolvedPath, received, resumeAt, appendToExisting, append)
+	if err == nil {
+		defer closeExisting()
+		// The backend receives whole-object data; size reports only what the client sent.
+		_, err = driver.storageImpl.PutFile(resolvedPath, source, 0)
+	}
+	size := received.n
 	duration := time.Since(start)
 
 	if err != nil {
@@ -709,6 +717,53 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 	metrics.RecordFileTransfer(driver.authenticatedUser, "upload", driver.getBackendType(), size, duration)
 
 	return size, nil
+}
+
+// byteCounter counts the bytes read through it.
+type byteCounter struct {
+	r io.Reader
+	n int64
+}
+
+func (b *byteCounter) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	b.n += int64(n)
+	return n, err
+}
+
+// uploadSource returns the data the backend should store for an upload.
+//
+// A plain upload stores the client's data. APPE stores the existing object
+// followed by the new data; a resume at offset N stores the first N bytes of the
+// existing object followed by the new data. APPE creates a missing object; a
+// resume of a missing object is an error. The returned func releases the existing
+// object.
+func (driver *KubeDriver) uploadSource(resolvedPath string, data io.Reader, resumeAt int64, appendToExisting, appending bool) (io.Reader, func(), error) {
+	noop := func() {}
+	if !appending {
+		return data, noop, nil
+	}
+
+	size, existing, err := driver.storageImpl.GetFile(resolvedPath, 0)
+	if err != nil {
+		if !isFileNotFoundError(err) {
+			return nil, noop, err
+		}
+		if resumeAt > 0 {
+			return nil, noop, fmt.Errorf("cannot resume upload at offset %d: file does not exist", resumeAt)
+		}
+		return data, noop, nil
+	}
+	closeExisting := func() { _ = existing.Close() }
+
+	if appendToExisting {
+		return io.MultiReader(existing, data), closeExisting, nil
+	}
+	if size < resumeAt {
+		closeExisting()
+		return nil, noop, fmt.Errorf("cannot resume upload at offset %d: existing file is %d bytes", resumeAt, size)
+	}
+	return io.MultiReader(io.LimitReader(existing, resumeAt), data), closeExisting, nil
 }
 
 // ensureUserInitialized ensures the driver has an authenticated user and storage configured

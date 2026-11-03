@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
+	"github.com/rossigee/kubeftpd/internal/storage"
 )
 
 // MockStorage for testing
@@ -478,7 +480,12 @@ func TestKubeDriver_PutFile(t *testing.T) {
 	reader := strings.NewReader(testContent)
 
 	mockStorage := &MockStorage{}
-	mockStorage.On("PutFile", "/testfile.txt", reader, int64(0)).Return(int64(len(testContent)), nil)
+	// The driver counts the client's bytes by wrapping the reader, so match the
+	// stored source loosely and let the mock consume it so the count is taken.
+	mockStorage.On("PutFile", "/testfile.txt", mock.Anything, int64(0)).
+		Run(func(args mock.Arguments) {
+			_, _ = io.ReadAll(args.Get(1).(io.Reader))
+		}).Return(int64(len(testContent)), nil)
 
 	driver := &KubeDriver{
 		auth:              auth,
@@ -556,7 +563,10 @@ func TestKubeDriver_OperationLogging(t *testing.T) {
 		testContent := "upload test content"
 		reader := strings.NewReader(testContent)
 
-		mockStorage.On("PutFile", "/upload.txt", reader, int64(0)).Return(int64(len(testContent)), nil)
+		mockStorage.On("PutFile", "/upload.txt", mock.Anything, int64(0)).
+			Run(func(args mock.Arguments) {
+				_, _ = io.ReadAll(args.Get(1).(io.Reader))
+			}).Return(int64(len(testContent)), nil)
 
 		size, err := driver.PutFile(nil, "/upload.txt", reader, int64(0))
 		assert.NoError(t, err)
@@ -614,8 +624,8 @@ func TestTracingConfiguration(t *testing.T) {
 	})
 }
 
-// Regression test for offset mode handling
-func TestKubeDriver_PutFile_OffsetForced(t *testing.T) {
+// A plain STOR (no REST, so offset -1) overwrites the whole object.
+func TestKubeDriver_PutFile_PlainStoreOverwrites(t *testing.T) {
 	scheme := runtime.NewScheme()
 	err := ftpv1.AddToScheme(scheme)
 	assert.NoError(t, err)
@@ -646,16 +656,165 @@ func TestKubeDriver_PutFile_OffsetForced(t *testing.T) {
 		authenticatedUser: "testuser",
 	}
 
-	// Test that offset gets forced to 0
+	// The backend must read the client's data and be asked for a whole-object write.
 	reader := strings.NewReader("test content")
-	mockStorage.On("PutFile", "/home/testuser/test.txt", reader, int64(0)).Return(int64(12), nil)
+	mockStorage.On("PutFile", "/home/testuser/test.txt", mock.Anything, int64(0)).
+		Run(func(args mock.Arguments) {
+			_, _ = io.ReadAll(args.Get(1).(io.Reader))
+		}).Return(int64(12), nil)
 
-	// Call PutFile with non-zero offset - should be forced to 0
-	size, err := driver.PutFile(nil, "/test.txt", reader, int64(100))
+	size, err := driver.PutFile(nil, "/test.txt", reader, int64(-1))
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(12), size)
 	mockStorage.AssertExpectations(t)
+}
+
+func uploadTestDriver(ms *MockStorage) *KubeDriver {
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice", Namespace: "default"},
+		Spec: ftpv1.UserSpec{
+			Username:      "alice",
+			HomeDirectory: "/home/alice",
+			Permissions:   ftpv1.UserPermissions{Read: true, Write: true},
+			Backend:       ftpv1.BackendReference{Kind: "FilesystemBackend", Name: "fs"},
+		},
+	}
+	return &KubeDriver{user: user, storageImpl: ms, authenticatedUser: "alice"}
+}
+
+// capturePut expects one whole-object write of /f.txt and returns what it stored.
+func capturePut(ms *MockStorage) *[]byte {
+	stored := new([]byte)
+	ms.On("PutFile", "/f.txt", mock.Anything, int64(0)).
+		Run(func(args mock.Arguments) {
+			data, _ := io.ReadAll(args.Get(1).(io.Reader))
+			*stored = data
+		}).Return(int64(0), nil).Once()
+	return stored
+}
+
+// Uploads must store exactly what the FTP command means: APPE appends, a REST
+// resume keeps the bytes before the offset, and only plain STOR replaces.
+func TestKubeDriver_UploadSemantics(t *testing.T) {
+	appe := &server.Context{Cmd: "APPE"}
+	stor := &server.Context{Cmd: "STOR"}
+
+	t.Run("plain STOR overwrites without reading the object", func(t *testing.T) {
+		ms := &MockStorage{}
+		stored := capturePut(ms)
+		n, err := uploadTestDriver(ms).PutFile(stor, "/f.txt", strings.NewReader("new"), -1)
+		require.NoError(t, err)
+		assert.Equal(t, "new", string(*stored))
+		assert.Equal(t, int64(3), n)
+		ms.AssertNotCalled(t, "GetFile", mock.Anything, mock.Anything)
+	})
+
+	t.Run("APPE appends to the existing object", func(t *testing.T) {
+		ms := &MockStorage{}
+		ms.On("GetFile", "/f.txt", int64(0)).Return(int64(3), io.NopCloser(strings.NewReader("old")), nil).Once()
+		stored := capturePut(ms)
+		n, err := uploadTestDriver(ms).PutFile(appe, "/f.txt", strings.NewReader("new"), -1)
+		require.NoError(t, err)
+		assert.Equal(t, "oldnew", string(*stored))
+		assert.Equal(t, int64(3), n, "reports only the bytes the client sent")
+		ms.AssertExpectations(t)
+	})
+
+	t.Run("APPE creates the object when it does not exist", func(t *testing.T) {
+		ms := &MockStorage{}
+		ms.On("GetFile", "/f.txt", int64(0)).
+			Return(int64(0), io.NopCloser(strings.NewReader("")), errors.New("file not found: /f.txt")).Once()
+		stored := capturePut(ms)
+		_, err := uploadTestDriver(ms).PutFile(appe, "/f.txt", strings.NewReader("new"), -1)
+		require.NoError(t, err)
+		assert.Equal(t, "new", string(*stored))
+	})
+
+	t.Run("resume at an offset keeps the bytes before it and replaces the rest", func(t *testing.T) {
+		ms := &MockStorage{}
+		ms.On("GetFile", "/f.txt", int64(0)).Return(int64(6), io.NopCloser(strings.NewReader("abcdef")), nil).Once()
+		stored := capturePut(ms)
+		_, err := uploadTestDriver(ms).PutFile(stor, "/f.txt", strings.NewReader("XY"), 3)
+		require.NoError(t, err)
+		assert.Equal(t, "abcXY", string(*stored))
+	})
+
+	t.Run("resume beyond the end of the object is refused", func(t *testing.T) {
+		ms := &MockStorage{}
+		ms.On("GetFile", "/f.txt", int64(0)).Return(int64(2), io.NopCloser(strings.NewReader("ab")), nil).Once()
+		_, err := uploadTestDriver(ms).PutFile(stor, "/f.txt", strings.NewReader("X"), 5)
+		assert.ErrorContains(t, err, "existing file is 2 bytes")
+		ms.AssertNotCalled(t, "PutFile", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("resume of a missing object is refused", func(t *testing.T) {
+		ms := &MockStorage{}
+		ms.On("GetFile", "/f.txt", int64(0)).
+			Return(int64(0), io.NopCloser(strings.NewReader("")), errors.New("file not found: /f.txt")).Once()
+		_, err := uploadTestDriver(ms).PutFile(stor, "/f.txt", strings.NewReader("X"), 2)
+		assert.ErrorContains(t, err, "does not exist")
+	})
+
+	t.Run("a failed read of the existing object is returned, not written over", func(t *testing.T) {
+		ms := &MockStorage{}
+		boom := errors.New("disk error")
+		ms.On("GetFile", "/f.txt", int64(0)).Return(int64(0), io.NopCloser(strings.NewReader("")), boom).Once()
+		_, err := uploadTestDriver(ms).PutFile(appe, "/f.txt", strings.NewReader("X"), -1)
+		assert.ErrorIs(t, err, boom)
+		ms.AssertNotCalled(t, "PutFile", mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+// End to end through the real filesystem storage: APPE accumulates and a resume
+// replaces only the tail.
+func TestKubeDriver_UploadsThroughFilesystemStorage(t *testing.T) {
+	base := t.TempDir()
+	scheme := runtime.NewScheme()
+	require.NoError(t, ftpv1.AddToScheme(scheme))
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&ftpv1.FilesystemBackend{
+			ObjectMeta: metav1.ObjectMeta{Name: "fs", Namespace: "default"},
+			Spec:       ftpv1.FilesystemBackendSpec{BasePath: base},
+		},
+	).Build()
+	user := &ftpv1.User{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice", Namespace: "default"},
+		Spec: ftpv1.UserSpec{
+			Username:      "alice",
+			HomeDirectory: "/",
+			Permissions:   ftpv1.UserPermissions{Read: true, Write: true, List: true},
+			Backend:       ftpv1.BackendReference{Kind: "FilesystemBackend", Name: "fs"},
+		},
+	}
+	st, err := storage.NewStorage(context.Background(), user, kubeClient)
+	require.NoError(t, err)
+	d := &KubeDriver{user: user, storageImpl: st, authenticatedUser: "alice", client: kubeClient}
+
+	read := func(t *testing.T) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(base, "log.txt"))
+		require.NoError(t, err)
+		return string(data)
+	}
+
+	// APPE to a file that does not exist yet creates it.
+	_, err = d.PutFile(&server.Context{Cmd: "APPE"}, "/log.txt", strings.NewReader("one"), -1)
+	require.NoError(t, err)
+	// APPE again adds to the end.
+	_, err = d.PutFile(&server.Context{Cmd: "APPE"}, "/log.txt", strings.NewReader("two"), -1)
+	require.NoError(t, err)
+	assert.Equal(t, "onetwo", read(t))
+
+	// A resume at offset 3 keeps "one" and replaces the rest.
+	_, err = d.PutFile(&server.Context{Cmd: "STOR"}, "/log.txt", strings.NewReader("XY"), 3)
+	require.NoError(t, err)
+	assert.Equal(t, "oneXY", read(t))
+
+	// A plain STOR overwrites.
+	_, err = d.PutFile(&server.Context{Cmd: "STOR"}, "/log.txt", strings.NewReader("fresh"), -1)
+	require.NoError(t, err)
+	assert.Equal(t, "fresh", read(t))
 }
 
 // Regression test for structured logging compatibility
@@ -824,7 +983,9 @@ func TestKubeDriver_Operations_PassThroughToStorage(t *testing.T) {
 
 	t.Run("upload", func(t *testing.T) {
 		d, ms := newOpsTestDriver(false)
-		ms.On("PutFile", "up.txt", mock.Anything, int64(0)).Return(int64(4), nil).Once()
+		ms.On("PutFile", "up.txt", mock.Anything, int64(0)).
+			Run(func(args mock.Arguments) { _, _ = io.ReadAll(args.Get(1).(io.Reader)) }).
+			Return(int64(4), nil).Once()
 		n, err := d.PutFile(nil, "up.txt", strings.NewReader("data"), 0)
 		assert.NoError(t, err)
 		assert.Equal(t, int64(4), n)
@@ -1082,10 +1243,11 @@ func TestKubeDriver_Operations_StorageErrorsWithTracing(t *testing.T) {
 		_, err := d.PutFile(nil, "a", strings.NewReader("x"), 0)
 		assert.ErrorIs(t, err, boom)
 	})
-	t.Run("append is forced to upload and still reports errors", func(t *testing.T) {
+	t.Run("resume still reports backend errors", func(t *testing.T) {
 		d, ms := newOpsTestDriver(false)
+		ms.On("GetFile", "a", int64(0)).Return(int64(7), io.NopCloser(strings.NewReader("1234567")), nil).Once()
 		ms.On("PutFile", "a", mock.Anything, int64(0)).Return(int64(0), boom).Once()
-		_, err := d.PutFile(nil, "a", strings.NewReader("x"), 7)
+		_, err := d.PutFile(&server.Context{Cmd: "STOR"}, "a", strings.NewReader("x"), 7)
 		assert.ErrorIs(t, err, boom)
 	})
 	t.Run("chroot denial on download and upload", func(t *testing.T) {
