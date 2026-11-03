@@ -305,7 +305,7 @@ func (driver *KubeDriver) Init(conn *server.Context) {
 	username := driver.getAuthenticatedUsername()
 	if username != "" {
 		logger.Info("Recording connection metrics", "username", username, "client_ip", driver.clientIP)
-		metrics.RecordConnection(username, driver.clientIP)
+		metrics.RecordConnection(driver.clientIP)
 	}
 }
 
@@ -599,7 +599,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
-		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
+		metrics.RecordFileOperation("download", driver.getBackendType(), "error")
 		return 0, nil, wrapStorageError(err)
 	}
 
@@ -611,7 +611,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
-		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
+		metrics.RecordFileOperation("download", driver.getBackendType(), "error")
 		return 0, nil, err
 	}
 
@@ -624,7 +624,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
-		metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "error")
+		metrics.RecordFileOperation("download", driver.getBackendType(), "error")
 		return 0, nil, err
 	}
 
@@ -636,8 +636,8 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 			attribute.Int64("ftp.duration_ms", duration.Milliseconds()),
 		)
 	}
-	metrics.RecordFileOperation(driver.authenticatedUser, "download", driver.getBackendType(), "success")
-	metrics.RecordFileTransfer(driver.authenticatedUser, "download", driver.getBackendType(), size, duration)
+	metrics.RecordFileOperation("download", driver.getBackendType(), "success")
+	metrics.RecordFileTransfer("download", driver.getBackendType(), size, duration)
 
 	return size, reader, nil
 }
@@ -686,7 +686,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
-		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
+		metrics.RecordFileOperation("upload", driver.getBackendType(), "error")
 		return 0, wrapStorageError(err)
 	}
 
@@ -698,7 +698,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
-		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
+		metrics.RecordFileOperation("upload", driver.getBackendType(), "error")
 		return 0, err
 	}
 
@@ -718,7 +718,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("ftp.status", "error"))
 		}
-		metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "error")
+		metrics.RecordFileOperation("upload", driver.getBackendType(), "error")
 		return 0, err
 	}
 
@@ -730,8 +730,8 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 			attribute.Int64("ftp.duration_ms", duration.Milliseconds()),
 		)
 	}
-	metrics.RecordFileOperation(driver.authenticatedUser, "upload", driver.getBackendType(), "success")
-	metrics.RecordFileTransfer(driver.authenticatedUser, "upload", driver.getBackendType(), size, duration)
+	metrics.RecordFileOperation("upload", driver.getBackendType(), "success")
+	metrics.RecordFileTransfer("upload", driver.getBackendType(), size, duration)
 
 	return size, nil
 }
@@ -886,8 +886,8 @@ func (driver *KubeDriver) Close() error {
 
 	if driver.authenticatedUser != "" && !driver.sessionStart.IsZero() {
 		sessionDuration := time.Since(driver.sessionStart)
-		metrics.RecordConnectionClosed(driver.authenticatedUser, sessionDuration)
-		metrics.RecordUserSession(driver.authenticatedUser, sessionDuration)
+		metrics.RecordConnectionClosed(sessionDuration)
+		metrics.RecordUserSession(sessionDuration)
 	}
 
 	return nil

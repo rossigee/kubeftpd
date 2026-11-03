@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Gateway API template**: `charts/kubeftpd/templates/gateway.yaml` is now tracked in git
 
 ### Fixed
+- **Metrics leak usernames**: usernames are no longer label values on `kubeftpd_connections_total`, `kubeftpd_connection_duration_seconds`, `kubeftpd_file_operations_total`, `kubeftpd_file_transfer_bytes_total`, `kubeftpd_file_transfer_duration_seconds` or `kubeftpd_user_session_duration_seconds`, so `/metrics` no longer enumerates accounts (#89). Connection and session duration metrics are now unlabelled
 - **Webhook manifest**: `ValidatingWebhookConfiguration` replaces the invalid `ValidatingAdmissionWebhook` kind, and a duplicated document separator is removed
 - **Git ignore**: the root-only `/kubeftpd` binary pattern no longer hides `charts/kubeftpd` files
 - **WebDAV resumed downloads**: a download resumed at an offset (REST then RETR) returned the whole file from byte 0; it now starts at the requested offset, and an offset past the end of the file is rejected
