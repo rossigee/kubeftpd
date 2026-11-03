@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Helm values**: `controller.replicas` and `controller.logLevel`; the controller receives `LOG_LEVEL` from `controller.logLevel`
+- **Connection limits**: `FTP_MAX_CONNECTIONS` caps concurrent control connections (further clients get a `421` reply), and `FTP_IDLE_TIMEOUT` closes a control connection that sends nothing for the given seconds. The chart's `ftp.settings.maxConnections` (100) and `idleTimeout` (300) now take effect; both were previously passed to the controller but ignored
+- **Log format**: `LOG_FORMAT=text` selects human-readable logs; `json` (the default) and unknown values keep JSON, with unknown values reported at startup
 - **Gateway API template**: `charts/kubeftpd/templates/gateway.yaml` is now tracked in git
 
 ### Fixed

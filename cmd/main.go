@@ -26,12 +26,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -80,6 +82,8 @@ type appConfig struct {
 	enableHTTP2       bool
 	ftpBindAddress    string
 	ftpPort           int
+	ftpIdleTimeout    time.Duration
+	ftpMaxConnections int
 	ftpPasvPorts      string
 	ftpPublicIP       string
 	ftpWelcomeMessage string
@@ -166,7 +170,49 @@ func parseFlags() (*appConfig, zap.Options) {
 		}
 	}
 
+	if encoder, err := logEncoderFor(os.Getenv("LOG_FORMAT")); err != nil {
+		// The logger is not configured yet, so report directly.
+		fmt.Fprintln(os.Stderr, err)
+	} else {
+		opts.Encoder = encoder
+	}
+
 	return config, opts
+}
+
+// logEncoderFor maps LOG_FORMAT to a zap encoder. JSON is the default, so it
+// returns nil and the logger keeps its own default.
+func logEncoderFor(format string) (zapcore.Encoder, error) {
+	switch strings.ToLower(format) {
+	case "", "json":
+		return nil, nil
+	case "text":
+		return zapcore.NewConsoleEncoder(uberzap.NewDevelopmentEncoderConfig()), nil
+	default:
+		return nil, fmt.Errorf("unknown LOG_FORMAT %q: use json or text; keeping json", format)
+	}
+}
+
+// applyFTPConnectionEnvOverrides reads FTP_IDLE_TIMEOUT (seconds) and
+// FTP_MAX_CONNECTIONS. Zero disables each; invalid values stop startup.
+func applyFTPConnectionEnvOverrides(config *appConfig) {
+	if envIdle := os.Getenv("FTP_IDLE_TIMEOUT"); envIdle != "" {
+		seconds, err := strconv.Atoi(envIdle)
+		if err != nil || seconds < 0 {
+			setupLog.Error(err, "invalid FTP_IDLE_TIMEOUT environment variable (seconds, 0 disables)", "value", envIdle)
+			os.Exit(1)
+		}
+		config.ftpIdleTimeout = time.Duration(seconds) * time.Second
+	}
+
+	if envMax := os.Getenv("FTP_MAX_CONNECTIONS"); envMax != "" {
+		maxConns, err := strconv.Atoi(envMax)
+		if err != nil || maxConns < 0 {
+			setupLog.Error(err, "invalid FTP_MAX_CONNECTIONS environment variable (0 means no limit)", "value", envMax)
+			os.Exit(1)
+		}
+		config.ftpMaxConnections = maxConns
+	}
 }
 
 func processEnvironmentOverrides(config *appConfig) {
@@ -182,6 +228,8 @@ func processEnvironmentOverrides(config *appConfig) {
 			os.Exit(1)
 		}
 	}
+
+	applyFTPConnectionEnvOverrides(config)
 
 	if envFtpPasvPorts := os.Getenv("FTP_PASSIVE_PORTS"); envFtpPasvPorts != "" {
 		config.ftpPasvPorts = envFtpPasvPorts
@@ -394,6 +442,8 @@ func addCertWatchersToManager(mgr ctrl.Manager, metricsCertWatcher, webhookCertW
 
 func buildFTPServer(config *appConfig, kubeClient client.Client) *ftp.Server {
 	s := ftp.NewServer(config.ftpBindAddress, config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, kubeClient)
+	s.IdleTimeout = config.ftpIdleTimeout
+	s.MaxConnections = config.ftpMaxConnections
 	if config.ftpTLSCertPath != "" {
 		s.TLSCertFile = filepath.Join(config.ftpTLSCertPath, config.ftpTLSCertName)
 		s.TLSKeyFile = filepath.Join(config.ftpTLSCertPath, config.ftpTLSCertKey)

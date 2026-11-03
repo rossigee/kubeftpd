@@ -86,8 +86,14 @@ type Server struct {
 	TLSKeyFile  string
 	// ForceTLS requires clients to upgrade to TLS before issuing any command.
 	ForceTLS bool
-	client   client.Client
-	server   *server.Server
+	// IdleTimeout closes a control connection that sends nothing for this long.
+	// Zero disables it.
+	IdleTimeout time.Duration
+	// MaxConnections caps concurrent control connections; further clients get a
+	// 421 reply. Zero means no cap.
+	MaxConnections int
+	client         client.Client
+	server         *server.Server
 }
 
 // NewServer creates a new FTP server instance
@@ -184,6 +190,17 @@ func (s *Server) Start(ctx context.Context) error {
 	listener, err := net.Listen("tcp", bindAddr)
 	if err != nil {
 		return fmt.Errorf("failed to create listener on %s: %w", bindAddr, err)
+	}
+	if s.MaxConnections > 0 || s.IdleTimeout > 0 {
+		listener = &limitedListener{
+			Listener: listener,
+			max:      s.MaxConnections,
+			idle:     s.IdleTimeout,
+			onRefuse: func(remote net.Addr) {
+				getLogger().Info("Rejected FTP connection: connection limit reached",
+					"remote", remote.String(), "max_connections", s.MaxConnections)
+			},
+		}
 	}
 	defer func() {
 		_ = listener.Close()
