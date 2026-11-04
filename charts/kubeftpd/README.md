@@ -301,9 +301,6 @@ podDisruptionBudget:
 |------|-------------|-------|
 | `ftp.service.type` | FTP service type | `LoadBalancer` |
 | `ftp.service.port` | FTP service port | `21` |
-| `ftp.passive.enabled` | Enable passive FTP | `true` |
-| `ftp.passive.service.portRange.min` | Passive port range minimum | `30000` |
-| `ftp.passive.service.portRange.max` | Passive port range maximum | `30100` |
 
 > **Note**: KubeFTPd automatically selects default ports based on user privileges (21 for root, 2121 for non-root). In Kubernetes deployments, containers typically run as root unless configured otherwise, so the default service port of 21 is appropriate.
 

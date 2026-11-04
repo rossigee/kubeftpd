@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Helm chart**: the legacy `ftp.passive` values and the `<fullname>-passive-service-legacy` Service are removed. Passive ports are served by the main FTP Service (`ftp.service.passivePortRange`), and the NetworkPolicy now allows those ports unconditionally
+  - **Upgrade warning**: a release that sets `ftp.passive.enabled: true` loses its separate LoadBalancer Service on upgrade. Move any `loadBalancerIP`, annotations or source ranges from `ftp.passive.service` to `ftp.service` first
+
 ## [v0.10.0] - 2026-11-04
 
 ### Changed
