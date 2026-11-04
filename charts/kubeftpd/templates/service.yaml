@@ -40,43 +40,6 @@ spec:
   selector:
     {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: manager
-{{- if .Values.ftp.passive.enabled }}
----
-# Legacy passive service (deprecated - now combined in main ftp-service)
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "kubeftpd.fullname" . }}-passive-service-legacy
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kubeftpd.labels" . | nindent 4 }}
-    app.kubernetes.io/component: ftp-passive-legacy
-  annotations:
-    deprecated: "true"
-    migration.note: "Passive ports are now combined in the main ftp-service"
-  {{- with .Values.ftp.passive.service.annotations }}
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-spec:
-  type: {{ .Values.ftp.passive.service.type }}
-  {{- if .Values.ftp.passive.service.loadBalancerIP }}
-  loadBalancerIP: {{ .Values.ftp.passive.service.loadBalancerIP }}
-  {{- end }}
-  {{- with .Values.ftp.passive.service.loadBalancerSourceRanges }}
-  loadBalancerSourceRanges:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-  ports:
-  {{- range $port := untilStep (int .Values.ftp.passive.service.portRange.min) (int (add .Values.ftp.passive.service.portRange.max 1)) 1 }}
-  - port: {{ $port }}
-    targetPort: passive-{{ $port }}
-    protocol: TCP
-    name: passive-{{ $port }}
-  {{- end }}
-  selector:
-    {{- include "kubeftpd.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: manager
-{{- end }}
 {{- if .Values.controller.http.enabled }}
 ---
 apiVersion: v1
