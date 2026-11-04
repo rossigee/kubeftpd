@@ -339,8 +339,8 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	@[ -f "$(GOLANGCI_LINT)" ] || { \
-		echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION)" ;\
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(LOCALBIN) $(GOLANGCI_LINT_VERSION) ;\
+		echo "Building golangci-lint $(GOLANGCI_LINT_VERSION) from source" ;\
+		GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) ;\
 	}
 
 .PHONY: gosec

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Makefile**: `make golangci-lint` builds the pinned golangci-lint version from source, because the release tarball for v2.15.0 failed its checksum
+
 ### Removed
 - **Helm chart**: the legacy `ftp.passive` values and the `<fullname>-passive-service-legacy` Service are removed. Passive ports are served by the main FTP Service (`ftp.service.passivePortRange`), and the NetworkPolicy now allows those ports unconditionally
   - **Upgrade warning**: a release that sets `ftp.passive.enabled: true` loses its separate LoadBalancer Service on upgrade. Move any `loadBalancerIP`, annotations or source ranges from `ftp.passive.service` to `ftp.service` first
