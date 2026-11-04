@@ -135,18 +135,6 @@ ftp:
       # - type: IPAddress
       #   value: "10.0.0.1"
 
-  # Legacy passive configuration (deprecated - use service.passivePortRange instead)
-  passive:
-    enabled: false  # Disabled - ports now combined in main service
-    service:
-      type: LoadBalancer
-      portRange:
-        min: 10000
-        max: 10019
-      annotations: {}
-      loadBalancerIP: ""
-      loadBalancerSourceRanges: []
-
   # FTP server settings
   settings:
     welcomeMessage: "Welcome to KubeFTPd"
