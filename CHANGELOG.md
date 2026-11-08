@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.1] - 2026-11-08
+
 ### Fixed
 - **WebDAV backend**: `Stat` only accepts the PROPFIND response whose `href` is the requested path. A server that answers `207` for a missing path with an unrelated entry no longer makes that path appear to be a file, which made FTP `CWD` fail with `550 ... is a file`
 - **Makefile**: `make golangci-lint` builds the pinned golangci-lint version from source, because the release tarball for v2.15.0 failed its checksum
