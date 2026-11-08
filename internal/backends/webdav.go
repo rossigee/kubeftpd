@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -164,6 +165,25 @@ func getWebDavCredentialsFromSecret(ctx context.Context, secretRef *ftpv1.WebDav
 	return string(username), string(password), nil
 }
 
+// matchDAVResponse returns the multi-status entry that describes requestPath itself.
+// Some servers answer a Depth: 0 PROPFIND for a missing resource with 207 and an
+// unrelated entry (for example, another file in the share). Only an entry whose
+// href is the requested resource may be used; otherwise the resource does not exist.
+func matchDAVResponse(responses []davResponseEntry, requestPath string) *davResponseEntry {
+	want := strings.TrimSuffix(requestPath, "/")
+	for i := range responses {
+		hrefURL, err := url.Parse(responses[i].Href)
+		if err != nil {
+			continue
+		}
+		h := strings.TrimSuffix(hrefURL.Path, "/")
+		if h == want || (h != "" && strings.HasSuffix(want, h)) {
+			return &responses[i]
+		}
+	}
+	return nil
+}
+
 // Stat returns file/directory information
 func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 	fullPath := w.getFullPath(filePath)
@@ -178,7 +198,12 @@ func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
     </prop>
 </propfind>`
 
-	req, err := http.NewRequest("PROPFIND", w.endpoint+fullPath, strings.NewReader(propfindBody))
+	reqURL, err := url.Parse(w.endpoint + fullPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse WebDAV URL: %w", err)
+	}
+
+	req, err := http.NewRequest("PROPFIND", reqURL.String(), strings.NewReader(propfindBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PROPFIND request: %w", err)
 	}
@@ -214,30 +239,45 @@ func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 
 	// Parse XML if the body is non-empty; tolerate servers that return 207 with no body.
 	if len(body) > 0 {
-		var ms davResponse
-		if err := xml.Unmarshal(body, &ms); err != nil {
-			return nil, fmt.Errorf("failed to parse PROPFIND response: %w", err)
-		}
-		if len(ms.Responses) > 0 {
-			for _, ps := range ms.Responses[0].Propstat {
-				if ps.Prop.ResourceType != nil {
-					fi.IsDir = true
-					fi.Mode = 0755
-				}
-				if ps.Prop.ContentLength != "" {
-					size, _ := strconv.ParseInt(ps.Prop.ContentLength, 10, 64)
-					fi.Size = size
-				}
-				if ps.Prop.LastModified != "" {
-					if t, err := time.Parse(time.RFC1123, ps.Prop.LastModified); err == nil {
-						fi.ModTime = t
-					}
-				}
-			}
+		if err := applyPropfindResponse(fi, body, reqURL.Path); err != nil {
+			return nil, err
 		}
 	}
 
 	return fi, nil
+}
+
+// applyPropfindResponse fills fi from the multi-status entry that describes requestPath.
+// A body with no entries leaves fi unchanged.
+func applyPropfindResponse(fi *FileInfo, body []byte, requestPath string) error {
+	var ms davResponse
+	if err := xml.Unmarshal(body, &ms); err != nil {
+		return fmt.Errorf("failed to parse PROPFIND response: %w", err)
+	}
+	if len(ms.Responses) == 0 {
+		return nil
+	}
+
+	entry := matchDAVResponse(ms.Responses, requestPath)
+	if entry == nil {
+		return errWebDAVNotFound
+	}
+	for _, ps := range entry.Propstat {
+		if ps.Prop.ResourceType != nil {
+			fi.IsDir = true
+			fi.Mode = 0755
+		}
+		if ps.Prop.ContentLength != "" {
+			size, _ := strconv.ParseInt(ps.Prop.ContentLength, 10, 64)
+			fi.Size = size
+		}
+		if ps.Prop.LastModified != "" {
+			if t, err := time.Parse(time.RFC1123, ps.Prop.LastModified); err == nil {
+				fi.ModTime = t
+			}
+		}
+	}
+	return nil
 }
 
 // Exists checks if a file or directory exists
