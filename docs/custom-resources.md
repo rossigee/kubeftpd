@@ -104,6 +104,8 @@ spec:
       key: ca.crt
 ```
 
+**Server requirements.** kubeftpd checks whether a path exists with a `PROPFIND` (`Depth: 0`). For a path that does not exist, the server must answer `404 Not Found`, or `207 Multi-Status` with an entry whose `href` is that path. A `207` that only describes other resources is treated as "not found". A server that reports a missing path as an existing file makes FTP clients fail with `550 ... is a file`.
+
 ### FilesystemBackend
 
 Stores files on a PersistentVolumeClaim mounted into the controller pod.
