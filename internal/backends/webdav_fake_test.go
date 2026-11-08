@@ -291,6 +291,29 @@ func TestWebDavBackendImpl_Stat_DirectoryAndMissing(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// A server that answers 207 for a missing path with an unrelated entry must not
+// make that path exist (regression: Odoo DAV reported a 53-byte file for every path).
+func TestWebDavBackendImpl_Stat_UnrelatedMultistatusEntry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMultiStatus)
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?>` +
+			`<multistatus xmlns="DAV:"><response><href>/1/other.txt</href>` +
+			`<propstat><prop><getcontentlength>53</getcontentlength><resourcetype/></prop>` +
+			`<status>HTTP/1.1 200 OK</status></propstat></response></multistatus>`))
+	}))
+	t.Cleanup(srv.Close)
+
+	w := &webDavBackendImpl{client: srv.Client(), endpoint: srv.URL + "/1", username: "u", password: "p"}
+
+	_, err := w.Stat("/home/scanner-visa")
+	assert.ErrorContains(t, err, "file not found")
+
+	info, err := w.Stat("/other.txt")
+	require.NoError(t, err)
+	assert.False(t, info.IsDir)
+	assert.Equal(t, int64(53), info.Size)
+}
+
 func TestWebDavBackendImpl_DirectoryOperations(t *testing.T) {
 	w, d := newFakeDAVBackend(t, "")
 
