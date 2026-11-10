@@ -156,12 +156,12 @@ func TestKubeDriver_getAuthenticatedUsername(t *testing.T) {
 		authenticatedUser: "testuser",
 	}
 
-	username := driver.getAuthenticatedUsername()
+	username := driver.getAuthenticatedUsername(nil)
 	assert.Equal(t, "testuser", username)
 
 	// Test empty username
 	driver.authenticatedUser = ""
-	username = driver.getAuthenticatedUsername()
+	username = driver.getAuthenticatedUsername(nil)
 	assert.Equal(t, "", username)
 }
 
@@ -588,7 +588,7 @@ func TestKubeDriver_OperationLogging(t *testing.T) {
 	})
 
 	t.Run("getAuthenticatedUsername returns correct user", func(t *testing.T) {
-		username := driver.getAuthenticatedUsername()
+		username := driver.getAuthenticatedUsername(nil)
 		assert.Equal(t, "testuser", username)
 	})
 
@@ -999,21 +999,29 @@ func TestKubeDriver_Operations_PassThroughToStorage(t *testing.T) {
 		assert.ErrorIs(t, err, boom)
 	})
 
+	// The goftp Perm interface carries no session context, so the owner, the
+	// group and the mode cannot be resolved per session. They are reported
+	// as fixed values instead of being read from the storage of whichever
+	// session happens to be the fallback one.
 	t.Run("owner, group and mode", func(t *testing.T) {
 		d, ms := newOpsTestDriver(false)
 		owner, err := d.GetOwner("a.txt")
 		assert.NoError(t, err)
-		assert.Equal(t, "alice", owner)
+		assert.Equal(t, "ftp", owner)
 
 		group, err := d.GetGroup("a.txt")
 		assert.NoError(t, err)
 		assert.Equal(t, "ftp", group)
 
-		ms.On("Stat", "a.txt").Return(&MockFileInfo{name: "a.txt", mode: 0o640}, nil).Once()
 		mode, err := d.GetMode("a.txt")
 		assert.NoError(t, err)
-		assert.Equal(t, fs.FileMode(0o640), mode)
-		ms.AssertExpectations(t)
+		assert.Equal(t, fs.FileMode(0o644), mode)
+
+		dirMode, err := d.GetMode("dir/")
+		assert.NoError(t, err)
+		assert.Equal(t, fs.FileMode(os.ModeDir|0o755), dirMode)
+
+		ms.AssertNotCalled(t, "Stat", "a.txt")
 	})
 }
 
@@ -1136,7 +1144,9 @@ func TestKubeDriver_EnsureUserInitialized(t *testing.T) {
 		require.NoError(t, d.ensureUserInitialized())
 		assert.NotNil(t, d.storageImpl)
 		assert.Equal(t, "dave", d.user.Spec.Username)
-		assert.Equal(t, "FilesystemBackend", d.getBackendType())
+		fallback, err := d.fallbackSession()
+		require.NoError(t, err)
+		assert.Equal(t, "FilesystemBackend", d.getBackendType(fallback))
 
 		// Second call returns straight away without consulting the cache again
 		d.authenticatedUser = ""
@@ -1145,7 +1155,7 @@ func TestKubeDriver_EnsureUserInitialized(t *testing.T) {
 }
 
 func TestKubeDriver_GetBackendTypeWithoutUser(t *testing.T) {
-	assert.Equal(t, "unknown", (&KubeDriver{}).getBackendType())
+	assert.Equal(t, "unknown", (&KubeDriver{}).getBackendType(nil))
 }
 
 func TestKubeDriverFactory_NewDriverCarriesDependencies(t *testing.T) {
