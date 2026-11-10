@@ -184,6 +184,30 @@ func matchDAVResponse(responses []davResponseEntry, requestPath string) *davResp
 	return nil
 }
 
+// isCollectionOf reports whether the requested path is the collection that
+// holds the given responses.
+func isCollectionOf(responses []davResponseEntry, requestPath string) bool {
+	want := strings.TrimSuffix(requestPath, "/")
+	for i := range responses {
+		hrefURL, err := url.Parse(responses[i].Href)
+		if err != nil {
+			continue
+		}
+		h := strings.TrimSuffix(hrefURL.Path, "/")
+		if h == "" {
+			continue
+		}
+		parent := h[:strings.LastIndex(h, "/")]
+		if parent == "" {
+			parent = "/"
+		}
+		if strings.HasSuffix(want, parent) {
+			return true
+		}
+	}
+	return false
+}
+
 // Stat returns file/directory information
 func (w *webDavBackendImpl) Stat(filePath string) (*FileInfo, error) {
 	fullPath := w.getFullPath(filePath)
@@ -260,6 +284,16 @@ func applyPropfindResponse(fi *FileInfo, body []byte, requestPath string) error 
 
 	entry := matchDAVResponse(ms.Responses, requestPath)
 	if entry == nil {
+		// Some WebDAV servers (the Odoo bureaucracy module) answer a
+		// PROPFIND on a collection with the entries of its children
+		// instead of an entry for the collection itself. The requested path
+		// is that collection when one of the returned entries is a child of
+		// it, which keeps "CWD /" working on such a server.
+		if isCollectionOf(ms.Responses, requestPath) {
+			fi.IsDir = true
+			fi.Mode = 0755
+			return nil
+		}
 		return errWebDAVNotFound
 	}
 	for _, ps := range entry.Propstat {
