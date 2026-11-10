@@ -70,6 +70,33 @@ the secret changed.
 `internal/controller/miniobackend_controller.go`,
 `internal/controller/webdavbackend_controller.go`
 
+## The routing test against the live backends
+
+`internal/ftp/live_routing_test.go` writes a file through a session of the
+MinIO user and through a session of the WebDAV user and checks that every file
+is only in the backend of its own user. It needs the custom resources and the
+secrets of the cluster, exported with kubectl:
+
+```bash
+mkdir -p /tmp/fixtures
+kubectl -n kubeftpd get users.ftp.golder.org -o json > /tmp/fixtures/users.json
+kubectl -n kubeftpd get webdavbackends.ftp.golder.org -o json > /tmp/fixtures/webdav.json
+kubectl -n kubeftpd get miniobackends.ftp.golder.org -o json > /tmp/fixtures/minio.json
+for s in kubeftpd-scanner-credentials kubeftpd-webdav-credentials \
+         scanner-minio-credentials; do
+  kubectl -n kubeftpd get secret "$s" -o json > "/tmp/fixtures/secret-$s.json"
+done
+# The CA of the MinioBackend is read from a secret of the same name as the
+# config map that holds it.
+kubectl -n kubeftpd get configmap internal-ca-certs -o jsonpath='{.data.ca\.crt}' > /tmp/ca.crt
+
+go test -tags live -run TestLiveRouting ./internal/ftp/...
+```
+
+The test is skipped when `LIVE_FIXTURES` is not set. `LIVE_DAV_ENDPOINT`
+overrides the address of the family Odoo instance, which defaults to the
+ClusterIP of its service.
+
 ## Build
 
 ```bash
