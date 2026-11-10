@@ -860,3 +860,58 @@ func TestWebdavReadSeekCloser_Seek(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid whence")
 }
+
+// The Odoo bureaucracy module answers a PROPFIND on a collection with the
+// entries of its children instead of an entry for the collection itself. The
+// collection has to be recognised, otherwise the operator cannot stat it and
+// the FTP server answers "550 Directory change to / failed." to CWD /.
+func TestWebDavBackendImpl_StatCollectionAnsweredWithItsChildren(t *testing.T) {
+	const collectionPath = "/.dav/webdav-scanner/1"
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PROPFIND" {
+			w.WriteHeader(404)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/xml")
+		w.WriteHeader(207)
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/1/scan.jpg</href>
+    <propstat>
+      <prop>
+        <resourcetype/>
+        <getcontentlength>1024</getcontentlength>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+</multistatus>`))
+	}))
+	defer testServer.Close()
+
+	kubeClient := fake.NewClientBuilder().Build()
+	backendCR := &ftpv1.WebDavBackend{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backend",
+			Namespace: "default",
+		},
+		Spec: ftpv1.WebDavBackendSpec{
+			Endpoint: testServer.URL + collectionPath,
+			Credentials: ftpv1.WebDavCredentials{
+				Username: "testuser",
+				Password: "testpass",
+			},
+		},
+	}
+
+	backend, err := newWebDavBackendImpl(context.TODO(), backendCR, kubeClient)
+	require.NoError(t, err)
+
+	fileInfo, err := backend.Stat("/")
+	require.NoError(t, err)
+	require.NotNil(t, fileInfo)
+	assert.True(t, fileInfo.IsDir, "the collection has to be reported as a directory")
+}
