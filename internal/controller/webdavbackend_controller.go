@@ -21,13 +21,17 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 	"github.com/rossigee/kubeftpd/internal/backends"
@@ -74,8 +78,9 @@ func (r *WebDavBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.handleWebDavBackendDeletion(ctx, backend)
 	}
 
-	// Only test connectivity if this is a new backend or if the spec has changed
-	shouldTestConnectivity := r.shouldTestConnectivity(backend)
+	// Only test connectivity if this is a new backend, if the spec has changed
+	// or if the credentials have changed
+	shouldTestConnectivity := r.shouldTestConnectivity(ctx, backend)
 
 	if shouldTestConnectivity {
 		// Test connectivity to WebDAV
@@ -95,6 +100,7 @@ func (r *WebDavBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if err := r.Status().Update(ctx, backend); err != nil {
 				return ctrl.Result{}, fmt.Errorf("recording connectivity test: %w", err)
 			}
+			r.recordTestedSecretVersion(ctx, backend)
 			return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
 		}
 
@@ -114,6 +120,7 @@ func (r *WebDavBackendReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Status().Update(ctx, backend); err != nil {
 			return ctrl.Result{}, fmt.Errorf("recording connectivity test: %w", err)
 		}
+		r.recordTestedSecretVersion(ctx, backend)
 	}
 
 	log.Info("WebDavBackend reconciliation completed", "backend", backend.Name)
@@ -134,7 +141,7 @@ func (r *WebDavBackendReconciler) testWebDavConnectivity(ctx context.Context, ba
 }
 
 // shouldTestConnectivity determines if we should test connectivity for this backend
-func (r *WebDavBackendReconciler) shouldTestConnectivity(backend *ftpv1.WebDavBackend) bool {
+func (r *WebDavBackendReconciler) shouldTestConnectivity(ctx context.Context, backend *ftpv1.WebDavBackend) bool {
 	// Always test if we haven't tested before
 	if backend.Status.LastConnectivityTest.IsZero() {
 		return true
@@ -142,7 +149,84 @@ func (r *WebDavBackendReconciler) shouldTestConnectivity(backend *ftpv1.WebDavBa
 
 	// Test if the spec has changed since last test
 	// Compare resource version or generation
-	return backend.Status.ObservedGeneration != backend.Generation
+	if backend.Status.ObservedGeneration != backend.Generation {
+		return true
+	}
+
+	// Test again when the credentials changed: they live in a secret, so a
+	// change of the secret does not change the generation of the backend and
+	// would otherwise keep the result of the first test forever.
+	ref, ok := r.credentialsSecret(backend)
+	if !ok {
+		return false
+	}
+
+	version, err := credentialsSecretVersion(ctx, r.Client, backend.Namespace, ref)
+	if err != nil {
+		// The secret cannot be read. Test again, the test reports the error.
+		return true
+	}
+
+	return backend.Annotations[ObservedSecretVersionAnnotation] != version
+}
+
+// credentialsSecret returns the secret that holds the credentials of the backend.
+func (r *WebDavBackendReconciler) credentialsSecret(backend *ftpv1.WebDavBackend) (secretRef, bool) {
+	if backend.Spec.Credentials.UseSecret == nil {
+		return secretRef{}, false
+	}
+
+	ref := secretRef{name: backend.Spec.Credentials.UseSecret.Name}
+	if backend.Spec.Credentials.UseSecret.Namespace != nil {
+		ref.namespace = *backend.Spec.Credentials.UseSecret.Namespace
+	}
+
+	return ref, true
+}
+
+// recordTestedSecretVersion stores the version of the credentials secret that
+// the connectivity test used.
+func (r *WebDavBackendReconciler) recordTestedSecretVersion(ctx context.Context, backend *ftpv1.WebDavBackend) {
+	ref, ok := r.credentialsSecret(backend)
+	if !ok {
+		return
+	}
+
+	version, err := credentialsSecretVersion(ctx, r.Client, backend.Namespace, ref)
+	if err != nil {
+		return
+	}
+
+	_ = recordSecretVersion(ctx, r.Client, backend, version)
+}
+
+// backendsForSecret maps a credentials secret to the backends that use it.
+func (r *WebDavBackendReconciler) backendsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list ftpv1.WebDavBackendList
+	if err := r.List(ctx, &list); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range list.Items {
+		backend := &list.Items[i]
+		ref, ok := r.credentialsSecret(backend)
+		if !ok || ref.name != obj.GetName() {
+			continue
+		}
+		ns := ref.namespace
+		if ns == "" {
+			ns = backend.Namespace
+		}
+		if ns != obj.GetNamespace() {
+			continue
+		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: backend.Name, Namespace: backend.Namespace},
+		})
+	}
+
+	return requests
 }
 
 // markConnectivityTested updates the status to indicate connectivity was tested
@@ -183,6 +267,10 @@ func (r *WebDavBackendReconciler) handleWebDavBackendDeletion(ctx context.Contex
 func (r *WebDavBackendReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ftpv1.WebDavBackend{}).
+		// A change of the credentials secret has to trigger a new
+		// connectivity test: the credentials are not part of the spec of the
+		// backend, so the generation of the backend does not change.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.backendsForSecret)).
 		Named("webdavbackend").
 		Complete(r)
 }

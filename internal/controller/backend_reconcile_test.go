@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,6 +55,7 @@ func backendTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, ftpv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
 	return scheme
 }
 
@@ -62,17 +64,52 @@ func reconcileKey(name string) types.NamespacedName {
 }
 
 func TestShouldTestConnectivity(t *testing.T) {
+	ctx := context.Background()
 	r := &WebDavBackendReconciler{}
 	backend := &ftpv1.WebDavBackend{ObjectMeta: metav1.ObjectMeta{Generation: 2}}
 
-	assert.True(t, r.shouldTestConnectivity(backend), "never tested before")
+	assert.True(t, r.shouldTestConnectivity(ctx, backend), "never tested before")
 
 	backend.Status.LastConnectivityTest = metav1.Now()
 	backend.Status.ObservedGeneration = 1
-	assert.True(t, r.shouldTestConnectivity(backend), "spec changed since last test")
+	assert.True(t, r.shouldTestConnectivity(ctx, backend), "spec changed since last test")
 
 	backend.Status.ObservedGeneration = 2
-	assert.False(t, r.shouldTestConnectivity(backend), "already tested at this generation")
+	assert.False(t, r.shouldTestConnectivity(ctx, backend), "already tested at this generation")
+}
+
+// The credentials of a backend live in a secret, so a change of the secret
+// has to trigger a new connectivity test even when the spec of the backend
+// did not change.
+func TestShouldTestConnectivity_SecretChanged(t *testing.T) {
+	ctx := context.Background()
+	scheme := backendTestScheme(t)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "creds", Namespace: "default", ResourceVersion: "1"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
+	r := &WebDavBackendReconciler{Client: c, Scheme: scheme}
+
+	backend := &ftpv1.WebDavBackend{
+		ObjectMeta: metav1.ObjectMeta{Name: "dav", Namespace: "default", Generation: 1},
+		Spec: ftpv1.WebDavBackendSpec{
+			Endpoint: "https://dav.example.invalid",
+			Credentials: ftpv1.WebDavCredentials{
+				UseSecret: &ftpv1.WebDavSecretRef{Name: "creds"},
+			},
+		},
+	}
+	backend.Status.LastConnectivityTest = metav1.Now()
+	backend.Status.ObservedGeneration = 1
+
+	assert.True(t, r.shouldTestConnectivity(ctx, backend), "the tested secret version is not recorded")
+
+	backend.Annotations = map[string]string{ObservedSecretVersionAnnotation: "1"}
+	assert.False(t, r.shouldTestConnectivity(ctx, backend), "the secret did not change")
+
+	backend.Annotations[ObservedSecretVersionAnnotation] = "2"
+	assert.True(t, r.shouldTestConnectivity(ctx, backend), "the secret changed")
 }
 
 func TestMarkConnectivityTested_RecordsGeneration(t *testing.T) {
