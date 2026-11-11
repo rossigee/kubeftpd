@@ -1,10 +1,10 @@
 # kubeftpd (fork)
 
 Fork of [rossigee/kubeftpd](https://github.com/rossigee/kubeftpd) at `v0.10.1`
-with two fixes that the itx-master deployment of the document scanner needs.
+with four fixes that the itx-master deployment of the document scanner needs.
 
 The operator image of this fork is published as
-`zot.bankrut.lan/bankrut/kubeftpd:v0.10.3` and is deployed by
+`zot.bankrut.lan/bankrut/kubeftpd:v0.10.4` and is deployed by
 `rossgolderltd/flux-itx-master` (`50-applications/kubeftpd`).
 
 ## Fix 1 - the storage backend is resolved per FTP session
@@ -69,6 +69,34 @@ the secret changed.
 `internal/controller/credentials_version.go`,
 `internal/controller/miniobackend_controller.go`,
 `internal/controller/webdavbackend_controller.go`
+
+## Fix 4 - the home directory is not applied twice
+
+`fix(ftp): apply the home directory of a user once`
+
+With chroot enabled, `validateChrootPath` resolved a request into the real
+path inside the home (`/scan001.pdf` -> `/<home>/scan001.pdf`) and handed that
+to the `Storage` implementation. Every `Storage` implementation then joined its
+own base path, which is the same `homeDirectory`, with the path it received:
+
+```go
+return path.Join(s.basePath, relativePath) // /<home>/<home>/scan001.pdf
+```
+
+So the home was applied twice. For the scanner users of itx-master, whose home
+is their bucket prefix (`/archive`, `/receipts`, ...), the consequence was that
+their own directory looked empty (`LIST /` returned nothing) and every upload
+landed one level deeper than intended, at `archive/archive/<file>` in the
+bucket `document-scans`. The WebDAV user masked the defect because its home is
+`/`, where joining the home twice is a no-op.
+
+The chroot validation still resolves the real path to decide whether the
+request stays inside the home, and now returns the virtual path within the
+home (`/scan001.pdf`) to the storage layer, which applies the home exactly
+once.
+
+`internal/ftp/server.go`, `internal/ftp/chroot_test.go`,
+`internal/ftp/driver_test.go`
 
 ## The routing test against the live backends
 
