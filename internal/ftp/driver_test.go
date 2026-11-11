@@ -658,7 +658,7 @@ func TestKubeDriver_PutFile_PlainStoreOverwrites(t *testing.T) {
 
 	// The backend must read the client's data and be asked for a whole-object write.
 	reader := strings.NewReader("test content")
-	mockStorage.On("PutFile", "/home/testuser/test.txt", mock.Anything, int64(0)).
+	mockStorage.On("PutFile", "/test.txt", mock.Anything, int64(0)).
 		Run(func(args mock.Arguments) {
 			_, _ = io.ReadAll(args.Get(1).(io.Reader))
 		}).Return(int64(12), nil)
@@ -1025,13 +1025,14 @@ func TestKubeDriver_Operations_PassThroughToStorage(t *testing.T) {
 	})
 }
 
-// With chroot enabled, every path is resolved inside the home directory before
-// it reaches storage, and escapes are refused without calling storage at all.
+// With chroot enabled, every path is validated against the home directory and
+// handed to storage as a virtual path inside it; storage joins the home once.
+// Escapes are refused without calling storage at all.
 func TestKubeDriver_Operations_ChrootResolvesAndDenies(t *testing.T) {
-	t.Run("relative and absolute paths resolve under home", func(t *testing.T) {
+	t.Run("relative and absolute paths resolve to the virtual home", func(t *testing.T) {
 		d, ms := newOpsTestDriver(true)
-		ms.On("MakeDir", "/home/alice/docs").Return(nil).Once()
-		ms.On("DeleteFile", "/home/alice/abs.txt").Return(nil).Once()
+		ms.On("MakeDir", "/docs").Return(nil).Once()
+		ms.On("DeleteFile", "/abs.txt").Return(nil).Once()
 		assert.NoError(t, d.MakeDir(nil, "docs"))
 		assert.NoError(t, d.DeleteFile(nil, "/abs.txt"))
 		ms.AssertExpectations(t)
@@ -1046,7 +1047,7 @@ func TestKubeDriver_Operations_ChrootResolvesAndDenies(t *testing.T) {
 		ms.AssertNotCalled(t, "DeleteDir", mock.Anything)
 
 		// An absolute path that climbs out is re-rooted under home, not escaped
-		ms.On("MakeDir", "/home/alice/tmp").Return(nil).Once()
+		ms.On("MakeDir", "/tmp").Return(nil).Once()
 		assert.NoError(t, d.MakeDir(nil, "/../../tmp"))
 		ms.AssertExpectations(t)
 	})
@@ -1060,8 +1061,8 @@ func TestKubeDriver_Operations_ChrootResolvesAndDenies(t *testing.T) {
 
 	t.Run("upload and download resolve under home", func(t *testing.T) {
 		d, ms := newOpsTestDriver(true)
-		ms.On("PutFile", "/home/alice/up.txt", mock.Anything, int64(0)).Return(int64(1), nil).Once()
-		ms.On("GetFile", "/home/alice/up.txt", int64(0)).
+		ms.On("PutFile", "/up.txt", mock.Anything, int64(0)).Return(int64(1), nil).Once()
+		ms.On("GetFile", "/up.txt", int64(0)).
 			Return(int64(1), io.NopCloser(strings.NewReader("x")), nil).Once()
 		_, err := d.PutFile(nil, "up.txt", strings.NewReader("x"), 0)
 		assert.NoError(t, err)

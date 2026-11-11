@@ -2,6 +2,7 @@ package ftp
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -314,7 +315,7 @@ func TestKubeDriver_ChrootFileOperations(t *testing.T) {
 	})
 
 	t.Run("ChangeDir_allowed_within_home", func(t *testing.T) {
-		mockStorage.On("ChangeDir", "/chroot/user/documents").Return(nil)
+		mockStorage.On("ChangeDir", "/documents").Return(nil)
 
 		err := driver.ChangeDir(nil, "/documents")
 		assert.NoError(t, err)
@@ -328,7 +329,7 @@ func TestKubeDriver_ChrootFileOperations(t *testing.T) {
 
 	t.Run("Stat_allowed_within_home", func(t *testing.T) {
 		mockFileInfo := &MockFileInfo{name: "test.txt", size: 100}
-		mockStorage.On("Stat", "/chroot/user/test.txt").Return(mockFileInfo, nil)
+		mockStorage.On("Stat", "/test.txt").Return(mockFileInfo, nil)
 
 		_, err := driver.Stat(nil, "/test.txt")
 		assert.NoError(t, err)
@@ -347,7 +348,7 @@ func TestKubeDriver_ChrootFileOperations(t *testing.T) {
 		assert.Contains(t, err.Error(), "access denied")
 
 		// Test valid rename within home
-		mockStorage.On("Rename", "/chroot/user/old.txt", "/chroot/user/new.txt").Return(nil)
+		mockStorage.On("Rename", "/old.txt", "/new.txt").Return(nil)
 		err = driver.Rename(nil, "/old.txt", "/new.txt")
 		assert.NoError(t, err)
 	})
@@ -477,6 +478,75 @@ func TestScannerChrootScenarios(t *testing.T) {
 					assert.Contains(t, err.Error(), "access denied", "Should indicate access denied")
 				}
 			}
+		})
+	}
+}
+
+// Test chrootVirtualPath normalisation
+func TestChrootVirtualPath(t *testing.T) {
+	tests := []struct {
+		name          string
+		requestedPath string
+		expected      string
+		description   string
+	}{
+		{"root", "/", "/", "the FTP root stays the virtual root"},
+		{"absolute_file", "/scan001.pdf", "/scan001.pdf", "an absolute path keeps one leading slash"},
+		{"relative_file", "scan001.pdf", "/scan001.pdf", "a relative path becomes absolute"},
+		{"relative_subdir", "documents/scan.pdf", "/documents/scan.pdf", "a relative subdirectory becomes absolute"},
+		{"trailing_slash", "/documents/", "/documents", "a trailing slash is cleaned"},
+		{"double_slash", "//documents/file.txt", "/documents/file.txt", "duplicate slashes collapse"},
+		{"parent_segments", "documents/../scan.pdf", "/scan.pdf", "parent segments are resolved"},
+		{"empty", "", "/", "an empty request is the virtual root"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, chrootVirtualPath(tt.requestedPath), tt.description)
+		})
+	}
+}
+
+// TestValidateChrootPathReturnsStoragePath ensures the path handed to a Storage
+// implementation is the virtual path within the user's home, because every
+// Storage joins its base path (the user's homeDirectory) with it. Returning the
+// home-joined path applied the home twice, so "/scan.jpg" reached the backend as
+// "<home>/<home>/scan.jpg": the user's own directory looked empty and uploads
+// landed one level too deep.
+func TestValidateChrootPathReturnsStoragePath(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, ftpv1.AddToScheme(scheme))
+
+	tests := []struct {
+		name      string
+		homeDir   string
+		requested string
+		expected  string
+	}{
+		{"scanner_root", "/archive", "/", "/"},
+		{"scanner_absolute", "/archive", "/scan001.pdf", "/scan001.pdf"},
+		{"scanner_relative", "/archive", "scan001.pdf", "/scan001.pdf"},
+		{"scanner_subdir", "/receipts", "/invoices/scan.pdf", "/invoices/scan.pdf"},
+		{"dav_root_home", "/", "/scan001.pdf", "/scan001.pdf"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := &ftpv1.User{
+				ObjectMeta: metav1.ObjectMeta{Name: "scanner", Namespace: "kubeftpd"},
+				Spec: ftpv1.UserSpec{
+					Username:      "scanner",
+					HomeDirectory: tt.homeDir,
+					Chroot:        true,
+				},
+			}
+			sess := &driverSession{user: user, username: user.Spec.Username}
+
+			got, err := sess.validateChrootPath(tt.requested)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+			// And the backend resolves it inside the home exactly once.
+			assert.Equal(t, filepath.Join(tt.homeDir, tt.expected), filepath.Join(tt.homeDir, filepath.Clean(tt.expected)))
 		})
 	}
 }

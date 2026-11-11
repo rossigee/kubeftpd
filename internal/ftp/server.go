@@ -530,6 +530,17 @@ func resolveChrootPath(requestedPath, homeDir string) string {
 	return filepath.Join(cleanHome, cleanRequested)
 }
 
+// chrootVirtualPath normalises a requested path into the virtual space of the
+// user's home: an absolute, cleaned, POSIX-style path such as "/" or
+// "/sub/file". Storage implementations join the path they receive with their
+// base path, which is the user's homeDirectory, so the home must not be
+// applied here as well. Applying it in both places resolved "/file" to
+// "<home>/<home>/file": the user's own directory looked empty and every upload
+// landed one level too deep.
+func chrootVirtualPath(requestedPath string) string {
+	return filepath.Join("/", filepath.Clean(requestedPath))
+}
+
 // isPathWithinHome validates that the resolved path stays within the user's home directory
 func isPathWithinHome(resolvedPath, homeDir string) bool {
 	// Clean and normalize both paths
@@ -570,9 +581,11 @@ func (sess *driverSession) validateChrootPath(path string) (string, error) {
 	}
 
 	logger := getLogger()
-	logger.Info("Chroot path resolved", "username", sess.username, "requested_path", path, "resolved_path", resolvedPath)
+	logger.Info("Chroot path resolved", "username", sess.username, "requested_path", path, "resolved_path", resolvedPath, "storage_path", chrootVirtualPath(path))
 
-	return resolvedPath, nil
+	// The storage layer joins the user's homeDirectory with the path it is
+	// given, so hand it the virtual path rather than the real one.
+	return chrootVirtualPath(path), nil
 }
 
 func (driver *KubeDriver) ChangeDir(ctx *server.Context, path string) error {
