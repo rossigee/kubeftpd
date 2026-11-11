@@ -1,0 +1,79 @@
+name: Image
+
+# Builds the operator image and publishes it to zot. The flux-itx-master
+# ImageRepository scans zot.bankrut.lan/bankrut/kubeftpd and the ImagePolicy
+# takes the highest semantic version, so the tag of a published image is the
+# operator version.
+#
+# A tag push builds and pushes that tag. A manual dispatch builds the ref that
+# is dispatched and pushes the version given as input, which is how a fix is
+# published for verification before its pull request is merged.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image tag to push, e.g. v0.10.4'
+        required: true
+
+env:
+  REGISTRY: zot.bankrut.lan
+  IMAGE: zot.bankrut.lan/bankrut/kubeftpd
+
+jobs:
+  image:
+    name: Build and push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -eu
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          case "$version" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "not a released version: $version" >&2; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          set -eu
+          docker build \
+            --build-arg VERSION="${{ steps.version.outputs.version }}" \
+            --build-arg COMMIT="${GITHUB_SHA}" \
+            --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --tag "${IMAGE}:${{ steps.version.outputs.version }}" \
+            .
+
+      - name: Check the binary
+        run: docker run --rm "${IMAGE}:${{ steps.version.outputs.version }}" --help
+
+      - name: Push image
+        env:
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          set -eu
+          if [ -z "${REGISTRY_USERNAME}" ] || [ -z "${REGISTRY_PASSWORD}" ]; then
+            echo "REGISTRY_USERNAME and REGISTRY_PASSWORD must be set as repository secrets" >&2
+            exit 1
+          fi
+          printf '%s' "${REGISTRY_PASSWORD}" \
+            | docker login "${REGISTRY}" --username "${REGISTRY_USERNAME}" --password-stdin
+          docker push "${IMAGE}:${{ steps.version.outputs.version }}"
+          docker logout "${REGISTRY}"
