@@ -16,7 +16,7 @@ import (
 // does not change the generation of the backend. Without this annotation the
 // connectivity test would keep the result of the first test forever, and a
 // backend whose credentials were repaired would stay unready.
-const ObservedSecretVersionAnnotation = "ftp.golder.org/observed-secret-version"
+const ObservedSecretVersionAnnotation = "ftp.golder.org/observed-secret-version" // #nosec G101 -- annotation key, not a credential
 
 // secretRef identifies the secret that holds the credentials of a backend.
 type secretRef struct {

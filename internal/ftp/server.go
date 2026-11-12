@@ -318,6 +318,12 @@ type driverSession struct {
 	lastUsed time.Time
 }
 
+// maxDriverSessions bounds the session registry. The FTP server limits the
+// number of concurrent connections (settings.maxConnections), so the registry
+// only grows beyond that bound when connections are closed without the driver
+// being notified, which goftp.io/server/v2 does not do.
+const maxDriverSessions = 256
+
 // driverSessionTTL is how long an unused session is kept in the registry.
 // The FTP idle timeout is 30 minutes, so a session that has been idle for
 // longer than that is gone.
