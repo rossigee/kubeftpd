@@ -2,7 +2,7 @@
 FROM golang:1.27.4-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
-ARG VERSION=v0.10.1
+ARG VERSION=v0.10.3
 ARG COMMIT=unknown
 ARG DATE=unknown
 
