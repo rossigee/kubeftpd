@@ -183,6 +183,29 @@ The test is skipped when `LIVE_FIXTURES` is not set. `LIVE_DAV_ENDPOINT`
 overrides the address of the family Odoo instance, which defaults to the
 ClusterIP of its service.
 
+## The bucket repair and the end-to-end check (`hack/`)
+
+The three scripts are what Fixes 4 and 5 were proven with on the live cluster.
+They are kept so the same checks can be repeated without rewriting them:
+
+* `hack/minio_rehome.py` moves the scanner uploads that the doubled home
+  displaced, by the profile in the file name
+  (`archive/archive/general_001866.jpg` to `general/general_001866.jpg`): copy,
+  compare the size, then delete the displaced key. Without `--apply` it only
+  reports what it would move.
+* `hack/minio_cleanup.py` deletes the explicit list of probe files the earlier
+  checks left in `document-scans`. Nothing is matched by a pattern, and no scan
+  is ever deleted.
+* `hack/e2e_verify.py` is the routing check against the deployed operator: it
+  logs in over FTP as a MinIO user and as the WebDAV user, uploads one file per
+  session, and asserts the bucket key, the home listing, the DAV path and that
+  neither backend received the other user's file.
+
+Every credential is read from the cluster with `kubectl` when the script runs -
+nothing is embedded - and the S3 requests are signed with SigV4 against the
+internal CA. `hack/minio_cleanup.py` imports the client of
+`hack/minio_rehome.py`, so they stay in the same directory.
+
 ## Releases and tag numbering
 
 `.gitea/workflows/image.yml` publishes a tag of this repository to
