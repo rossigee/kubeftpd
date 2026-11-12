@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Backends**: MinIO and WebDAV storages now close their HTTP transport when an FTP session finishes, so idle connection pools are released. The session registry prunes on session age, with `maxDriverSessions` as a least-recently-used bound.
+- **MinIO**: streaming uploads use a bounded part size, and listings return bucket-relative keys below the requested prefix.
+- **WebDAV**: a collection answered with its children is treated as a directory.
+- **Controller**: backend connectivity is tested again when the referenced credentials change, tracked via the `ftp.golder.org/observed-secret-version` annotation.
+- **FTP**: the home directory of a user is applied once per session.
+
 ## [v0.10.3] - 2026-11-12
 
 ### Fixed
