@@ -476,28 +476,37 @@ func TestWebDavBackendImpl_Open(t *testing.T) {
 	_ = reader.Close()
 }
 
-func TestWebDavBackendImpl_WriteFile(t *testing.T) {
-	testContent := "Hello, WebDAV write!"
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// handleWriteFilePUT accepts a PUT of testContent only with valid credentials
+// and the image/jpeg Content-Type the Odoo controller needs.
+func handleWriteFilePUT(w http.ResponseWriter, r *http.Request, testContent string) {
+	user, pass, ok := r.BasicAuth()
+	if !ok || user != "testuser" || pass != "testpass" {
+		w.WriteHeader(401)
+		return
+	}
+	if got := r.Header.Get("Content-Type"); got != "image/jpeg" {
+		w.WriteHeader(500)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+	if string(body) == testContent {
+		w.WriteHeader(201)
+		return
+	}
+	w.WriteHeader(404)
+}
+
+// writeFileHandler serves a WebDAV server that accepts a PUT of testContent
+// (see handleWriteFilePUT) and answers the PROPFIND that verifies it.
+func writeFileHandler(testContent string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "PUT" && r.URL.Path == "/base/write.txt" {
-			user, pass, ok := r.BasicAuth()
-			if !ok || user != "testuser" || pass != "testpass" {
-				w.WriteHeader(401)
-				return
-			}
-			if got := r.Header.Get("Content-Type"); got != "image/jpeg" {
-				w.WriteHeader(500)
-				return
-			}
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				w.WriteHeader(500)
-				return
-			}
-			if string(body) == testContent {
-				w.WriteHeader(201)
-				return
-			}
+			handleWriteFilePUT(w, r, testContent)
+			return
 		}
 		if r.Method == "PROPFIND" && r.URL.Path == "/base/write.txt" {
 			user, pass, ok := r.BasicAuth()
@@ -520,6 +529,81 @@ func TestWebDavBackendImpl_WriteFile(t *testing.T) {
 				_, _ = w.Write([]byte(xmlResponse))
 				return
 			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
+		w.WriteHeader(404)
+	}
+}
+
+func TestWebDavBackendImpl_WriteFile(t *testing.T) {
+	testContent := "Hello, WebDAV write!"
+	testServer := httptest.NewServer(writeFileHandler(testContent))
+	defer testServer.Close()
+
+	kubeClient := fake.NewClientBuilder().Build()
+	backendCR := &ftpv1.WebDavBackend{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backend",
+			Namespace: "default",
+		},
+		Spec: ftpv1.WebDavBackendSpec{
+			Endpoint: testServer.URL,
+			BasePath: "/base",
+			Credentials: ftpv1.WebDavCredentials{
+				Username: "testuser",
+				Password: "testpass",
+			},
+		},
+	}
+
+	backend, err := newWebDavBackendImpl(context.TODO(), backendCR, kubeClient)
+	require.NoError(t, err)
+
+	n, err := backend.WriteFile("write.txt", strings.NewReader(testContent))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(len(testContent)), n)
+}
+
+func TestWebDavBackendImpl_WriteFileAcceptsReEncodedSize(t *testing.T) {
+	testContent := "Hello, WebDAV write!"
+	deletes := 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				w.WriteHeader(201)
+				return
+			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				xmlResponse := `<?xml version="1.0" encoding="utf-8"?>
+				<multistatus xmlns="DAV:">
+				  <response>
+				    <href>/base/write.txt</href>
+				    <propstat>
+				      <prop>
+				        <resourcetype/>
+				        <getcontentlength>1</getcontentlength>
+				      </prop>
+				      <status>HTTP/1.1 200 OK</status>
+				    </propstat>
+				  </response>
+				</multistatus>`
+				w.Header().Set("Content-Type", "text/xml")
+				w.WriteHeader(207)
+				_, _ = w.Write([]byte(xmlResponse))
+				return
+			}
+		}
+		if r.Method == "DELETE" {
+			deletes++
+			w.WriteHeader(204)
+			return
 		}
 		if r.Method == "PROPFIND" && r.URL.Path == "/" {
 			w.WriteHeader(200)
@@ -551,6 +635,77 @@ func TestWebDavBackendImpl_WriteFile(t *testing.T) {
 	n, err := backend.WriteFile("write.txt", strings.NewReader(testContent))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(testContent)), n)
+	assert.Equal(t, 0, deletes, "re-encoded image should not be deleted")
+}
+
+func TestWebDavBackendImpl_WriteFileRejectsZeroByteReEncode(t *testing.T) {
+	testContent := "Hello, WebDAV write!"
+	deletes := 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				w.WriteHeader(201)
+				return
+			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				xmlResponse := `<?xml version="1.0" encoding="utf-8"?>
+				<multistatus xmlns="DAV:">
+				  <response>
+				    <href>/base/write.txt</href>
+				    <propstat>
+				      <prop>
+				        <resourcetype/>
+				        <getcontentlength>0</getcontentlength>
+				      </prop>
+				      <status>HTTP/1.1 200 OK</status>
+				    </propstat>
+				  </response>
+				</multistatus>`
+				w.Header().Set("Content-Type", "text/xml")
+				w.WriteHeader(207)
+				_, _ = w.Write([]byte(xmlResponse))
+				return
+			}
+		}
+		if r.Method == "DELETE" {
+			deletes++
+			w.WriteHeader(204)
+			return
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer testServer.Close()
+
+	kubeClient := fake.NewClientBuilder().Build()
+	backendCR := &ftpv1.WebDavBackend{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backend",
+			Namespace: "default",
+		},
+		Spec: ftpv1.WebDavBackendSpec{
+			Endpoint: testServer.URL,
+			BasePath: "/base",
+			Credentials: ftpv1.WebDavCredentials{
+				Username: "testuser",
+				Password: "testpass",
+			},
+		},
+	}
+
+	backend, err := newWebDavBackendImpl(context.TODO(), backendCR, kubeClient)
+	require.NoError(t, err)
+
+	_, err = backend.WriteFile("write.txt", strings.NewReader(testContent))
+	assert.Error(t, err)
+	assert.Equal(t, 1, deletes, "zero-byte file should be deleted")
 }
 
 func TestWebDavBackendImpl_Remove(t *testing.T) {
