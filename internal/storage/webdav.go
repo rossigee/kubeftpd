@@ -219,8 +219,17 @@ func (fi *webdavFileInfo) Owner() string      { return "" }
 func (fi *webdavFileInfo) Group() string      { return "" }
 func (fi *webdavFileInfo) Sys() interface{}   { return nil }
 
-// Close cleans up resources
+// Close releases the backend of this storage.
+//
+// An http.Client has no Close of its own, so this asks the backend through
+// io.Closer: a concrete backend closes the idle connections of its transport.
+// The session registry of the FTP server calls this when a session is retired;
+// without it the transport - and with it the connection pool and the TLS
+// session cache of the WebDAV server - stays reachable for as long as the
+// process keeps the session.
 func (s *webdavStorage) Close() error {
-	// WebDAV client does not require explicit closing
+	if closer, ok := s.backend.(io.Closer); ok {
+		return closer.Close()
+	}
 	return nil
 }

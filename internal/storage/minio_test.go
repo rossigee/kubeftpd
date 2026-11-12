@@ -60,6 +60,13 @@ func (m *MockMinioBackend) ListObjects(prefix string, recursive bool) ([]*backen
 	return args.Get(0).([]*backends.ObjectInfo), args.Error(1)
 }
 
+// Close lets the mock stand for a backend that owns resources, which is
+// what minioStorage.Close asks for.
+func (m *MockMinioBackend) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func minioTestStorage(perms ftpv1.UserPermissions, b *MockMinioBackend) *minioStorage {
 	user := &ftpv1.User{
 		ObjectMeta: metav1.ObjectMeta{Name: "testuser"},
@@ -185,8 +192,11 @@ func TestMinioStorage_TransferErrors(t *testing.T) {
 		assert.ErrorContains(t, err, "failed to put file")
 	})
 
-	t.Run("close is a no-op", func(t *testing.T) {
-		assert.NoError(t, minioTestStorage(ftpv1.UserPermissions{}, &MockMinioBackend{}).Close())
+	t.Run("close releases the backend", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		b.On("Close").Return(nil).Once()
+		assert.NoError(t, minioTestStorage(ftpv1.UserPermissions{}, b).Close())
+		b.AssertExpectations(t)
 	})
 }
 

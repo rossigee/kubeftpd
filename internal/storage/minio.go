@@ -278,8 +278,17 @@ func (fi *minioFileInfo) Owner() string      { return "" }
 func (fi *minioFileInfo) Group() string      { return "" }
 func (fi *minioFileInfo) Sys() interface{}   { return nil }
 
-// Close cleans up resources
+// Close releases the backend of this storage.
+//
+// The MinIO client has no Close of its own, so this asks the backend through
+// io.Closer: a concrete backend closes the idle connections of its transport.
+// The session registry of the FTP server calls this when a session is retired;
+// without it the transport - and with it the connection pool, the TLS session
+// cache and the read buffers of the backend - stays reachable for as long as
+// the process keeps the session.
 func (s *minioStorage) Close() error {
-	// MinIO client does not require explicit closing
+	if closer, ok := s.backend.(io.Closer); ok {
+		return closer.Close()
+	}
 	return nil
 }
