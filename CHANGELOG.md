@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.3] - 2026-11-12
+
+### Fixed
+- **Memory leak**: `evictStaleSessions()` in `internal/ftp/server.go` no longer skipped cleanup when the session count was below the old 256 cap. Stale `driverSession` entries (holding storage backends and TLS state) are now proactively released after 30 min idle, preventing unbounded memory growth during normal operation.
+
 ## [v0.10.2] - 2026-11-12
 
 ### Fixed
