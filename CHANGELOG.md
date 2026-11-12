@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.4] - 2026-11-13
+
 ### Fixed
 - **Backends**: MinIO and WebDAV storages now close their HTTP transport when an FTP session finishes, so idle connection pools are released. The session registry prunes on session age, with `maxDriverSessions` as a least-recently-used bound.
 - **MinIO**: streaming uploads use a bounded part size, and listings return bucket-relative keys below the requested prefix.
