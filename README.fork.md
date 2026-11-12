@@ -272,6 +272,13 @@ They are kept so the same checks can be repeated without rewriting them:
 * `hack/minio_cleanup.py` deletes the explicit list of probe files the earlier
   checks left in `document-scans`. Nothing is matched by a pattern, and no scan
   is ever deleted.
+* `hack/mem_probe.py` watches the operator's Go runtime while FTP sessions come
+  and go, so a growth in the session path shows up in `go_goroutines` and
+  `go_memstats_heap_alloc_bytes` instead of staying invisible.
+* `hack/upload_probe.py` uploads known sizes - single 1/10/40 MB, then one file
+  per profile concurrently - and samples the runtime while they are in flight. It
+  is the measurement the upload-buffer fix and the memory-limit sizing both rest
+  on. Everything it writes is named `memprobe-*` and deleted again at the end.
 * `hack/e2e_verify.py` is the routing check against the deployed operator: it
   logs in over FTP as a MinIO user and as the WebDAV user, uploads one file per
   session, and asserts the bucket key, the home listing, the DAV path and that
