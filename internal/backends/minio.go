@@ -24,6 +24,28 @@ type minioBackendImpl struct {
 	pathPrefix string
 }
 
+// uploadPartSize is the part size of a streaming upload, in bytes.
+//
+// An FTP transfer has no length until its last byte has arrived, so PutObject
+// uploads with an unknown size. minio-go plans an unknown-size upload for the
+// largest object the layout allows and, when the caller gives no part size,
+// chooses a part of about 537MiB: api-put-object-common.go says "When object
+// size is unknown (-1), default to 5TiB (or the maximum object size, when
+// lower) to limit memory usage. This results in ~537MiB part sizes. For larger
+// objects (up to the maximum object size), callers should set
+// configuredPartSize explicitly to control memory usage". One scanner page of
+// 0.3MB therefore put a 537MiB buffer of live heap behind it, and that buffer
+// was still reachable when the next transfer began, so the second upload of a
+// burst crossed the container's memory limit before the garbage collector ran.
+// The smallest part the library accepts bounds one upload to that instead, and
+// 10000 of them - the maximum part count - still cover a 156GB object.
+const uploadPartSize uint64 = 16 << 20
+
+// uploadOptions returns the options of a streaming upload.
+func uploadOptions() minio.PutObjectOptions {
+	return minio.PutObjectOptions{PartSize: uploadPartSize}
+}
+
 // newMinioBackendImpl creates a new MinIO backend implementation
 func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeClient client.Client) (MinioBackend, error) {
 	if ctx == nil {
@@ -215,7 +237,7 @@ func (m *minioBackendImpl) PutObject(objectName string, reader io.Reader, size i
 	fullPath := m.getFullPath(objectName)
 
 	// Upload object and get upload info
-	uploadInfo, err := m.client.PutObject(ctx, m.bucket, fullPath, reader, size, minio.PutObjectOptions{})
+	uploadInfo, err := m.client.PutObject(ctx, m.bucket, fullPath, reader, size, uploadOptions())
 	if err != nil {
 		return fmt.Errorf("failed to put object %s: %w", objectName, err)
 	}
