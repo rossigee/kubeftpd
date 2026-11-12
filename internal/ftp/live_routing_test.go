@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -140,6 +141,21 @@ func TestLiveRouting(t *testing.T) {
 	}
 	if _, err := davSession.storage.Stat("/" + davFile); err != nil {
 		t.Errorf("%s is missing in the WebDAV collection: %v", davFile, err)
+	}
+
+	// The home directory of the user must list it. A MinIO list prefix is
+	// matched against the keys verbatim, so a prefix built from the home
+	// directory of the user ("/archive") matches nothing and the directory of
+	// a user looks empty however many objects it holds.
+	var minioNames []string
+	if err := minioSession.storage.ListDir("/", func(fi os.FileInfo) error {
+		minioNames = append(minioNames, fi.Name())
+		return nil
+	}); err != nil {
+		t.Errorf("list the MinIO home directory: %v", err)
+	}
+	if !slices.Contains(minioNames, minioFile) {
+		t.Errorf("%s is missing from the listing of the MinIO home directory: %v", minioFile, minioNames)
 	}
 
 	// And only that file: the file of the other user must not be in this
