@@ -7,6 +7,16 @@ The operator image of this fork is published as
 `zot.bankrut.lan/bankrut/kubeftpd:v0.10.4` and is deployed by
 `rossgolderltd/flux-itx-master` (`50-applications/kubeftpd`).
 
+**Upstream status.** Upstream released `v0.10.2` on 2026-11-12 with Fix 1: its
+session isolation in `internal/ftp/server.go` and
+`internal/ftp/session_isolation_test.go` are this change, and its
+`CHANGELOG.md` describes it as the root cause of the cross-user access bugs.
+Fixes 2 to 5 are not upstream. They are queued as the branch
+`fix/operator-defects`, rebuilt on top of upstream master and verified there
+(`gofmt`, `go build ./...`, `go vet`, the unit tests of `internal/ftp`,
+`internal/storage` and `internal/backends`), waiting for a GitHub pull request;
+until it lands this fork is the only image with them.
+
 ## Fix 1 - the storage backend is resolved per FTP session
 
 `fix(ftp): resolve the storage backend per FTP session`
