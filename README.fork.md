@@ -1,17 +1,17 @@
 # kubeftpd (fork)
 
 Fork of [rossigee/kubeftpd](https://github.com/rossigee/kubeftpd) at `v0.10.1`
-with seven fixes that the itx-master deployment of the document scanner needs.
+with eight fixes that the itx-master deployment of the document scanner needs.
 
 The operator image of this fork is published as
-`zot.bankrut.lan/bankrut/kubeftpd:v0.10.5` and is deployed by
+`zot.bankrut.lan/bankrut/kubeftpd:v0.10.6` and is deployed by
 `rossgolderltd/flux-itx-master` (`50-applications/kubeftpd`).
 
 **Upstream status.** Upstream released `v0.10.2` on 2026-11-12 with Fix 1: its
 session isolation in `internal/ftp/server.go` and
 `internal/ftp/session_isolation_test.go` are this change, and its
 `CHANGELOG.md` describes it as the root cause of the cross-user access bugs.
-Fixes 2 to 7 are not upstream. They are queued as the branch
+Fixes 2 to 8 are not upstream. They are queued as the branch
 `fix/operator-defects`, rebuilt on top of upstream master and verified there
 (`gofmt`, `go build ./...`, `go vet`, the unit tests of `internal/ftp`,
 `internal/storage` and `internal/backends`), waiting for a GitHub pull request;
@@ -232,6 +232,32 @@ retained entries are not measurable. Releasing at disconnect would need an engin
 that reports it; that is a bigger change than this fork exists to carry, and the
 numbers above say it is not what limits this deployment.
 
+## Fix 8 - the WebDAV PUT sends no Content-Type, and Odoo silently stores nothing
+
+`fix(webdav): send image/jpeg on the PUT request`
+
+`WriteFile` builds the PUT with
+`http.NewRequest("PUT", ..., countingReader)` and set Basic auth, but no
+`Content-Type` header. With nothing set, Go uses chunked transfer encoding and
+the Odoo bureaucracy handler comes out with an empty raw body: `dav_upload`
+creates an `ir.attachment` with `file_size` 0, `harness` DMS file with no
+content, and answers `201` like a successful write. A page of a 402678-byte
+scan therefore arrived at the DAV collection with nothing in it, the
+verification step said the remote file was empty and returned `450` to the
+scanner, and the page was lost.
+
+Measured on the live endpoint:
+
+| PUT sent with | remote file size after |
+|---|---|
+| nothing set (chunked) | **0 bytes** |
+| `image/jpeg` | correct size for every 1–300 KB JPEG tested |
+| `application/octet-stream` | **500** Internal Server Error |
+
+The scanner sends JPEGs, so the fix sends `image/jpeg`. The test asserts the
+header specifically, so a regression shows up as a missing
+`image/jpeg` response of `500` the moment someone refactors the request.
+
 ## The routing test against the live backends
 
 `internal/ftp/live_routing_test.go` writes a file through a session of the
@@ -300,24 +326,24 @@ published under a fresh tag.
 
 The cluster's `ImagePolicy` resolves the highest semver tag of the zot
 repository, so **every fork release is tagged above the newest upstream release**.
-`v0.10.4` carried the first five fixes, `v0.10.5` the upload-buffer and
-session-release fixes, and the next one is numbered above whatever upstream has
-published by then. Upstream's next release may well be `v0.10.3` - a lower number
-with newer content - and the policy must never be led by that.
+`v0.10.5` carried Fixes 1–7, `v0.10.6` adds the WebDAV Content-Type fix, and the
+next one is numbered above whatever upstream has published by then. Upstream's
+next release may well be `v0.10.3` - a lower number with newer content - and the
+policy must never be led by that.
 
 Adopting upstream's own image is a deliberate change, made in one PR: move the
 `ImageRepository` and the HelmRelease image to the upstream registry and raise
-the policy range to the upstream version that carries Fixes 2 to 7. Never adopt
+the policy range to the upstream version that carries Fixes 2 to 8. Never adopt
 an image because its tag happens to sort higher than the deployed one.
 
 ## Build
 
 ```bash
 docker build --network=host \
-  --build-arg VERSION=v0.10.5 \
+  --build-arg VERSION=v0.10.6 \
   --build-arg COMMIT="$(git rev-parse --short HEAD)" \
   --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.5 .
+  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.6 .
 ```
 
 The build needs the host network: the module download is very slow over the
