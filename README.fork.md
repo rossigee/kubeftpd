@@ -183,6 +183,27 @@ The test is skipped when `LIVE_FIXTURES` is not set. `LIVE_DAV_ENDPOINT`
 overrides the address of the family Odoo instance, which defaults to the
 ClusterIP of its service.
 
+## Releases and tag numbering
+
+`.gitea/workflows/image.yml` publishes a tag of this repository to
+`zot.bankrut.lan/bankrut/kubeftpd`. Fork builds were published as `v0.10.2` and
+`v0.10.3` before upstream released its own, different `v0.10.2`; today the only
+`v0.10.x` tag of this repository is `v0.10.4`, so those two images in zot have no
+matching commit here. Do not reuse those numbers: a fork build of new content is
+published under a fresh tag.
+
+The cluster's `ImagePolicy` resolves the highest semver tag of the zot
+repository. Upstream's next release is expected to be `v0.10.3` — a lower number
+than the deployed `v0.10.4`, although its content is newer — so **a fork release
+rebased on upstream is tagged `v0.10.5` or later**. That keeps the policy
+selecting a build that carries Fixes 2 to 5 whatever upstream numbers its
+releases.
+
+Adopting upstream's own image is a deliberate change, made in one PR: move the
+`ImageRepository` and the HelmRelease image to the upstream registry and raise
+the policy range to the upstream version that carries Fixes 2 to 5. Never adopt
+an image because its tag happens to sort higher than the deployed one.
+
 ## Build
 
 ```bash
