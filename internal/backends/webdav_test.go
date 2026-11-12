@@ -553,6 +553,147 @@ func TestWebDavBackendImpl_WriteFile(t *testing.T) {
 	assert.Equal(t, int64(len(testContent)), n)
 }
 
+func TestWebDavBackendImpl_WriteFileAcceptsReEncodedSize(t *testing.T) {
+	testContent := "Hello, WebDAV write!"
+	deletes := 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				w.WriteHeader(201)
+				return
+			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				xmlResponse := `<?xml version="1.0" encoding="utf-8"?>
+				<multistatus xmlns="DAV:">
+				  <response>
+				    <href>/base/write.txt</href>
+				    <propstat>
+				      <prop>
+				        <resourcetype/>
+				        <getcontentlength>1</getcontentlength>
+				      </prop>
+				      <status>HTTP/1.1 200 OK</status>
+				    </propstat>
+				  </response>
+				</multistatus>`
+				w.Header().Set("Content-Type", "text/xml")
+				w.WriteHeader(207)
+				_, _ = w.Write([]byte(xmlResponse))
+				return
+			}
+		}
+		if r.Method == "DELETE" {
+			deletes++
+			w.WriteHeader(204)
+			return
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer testServer.Close()
+
+	kubeClient := fake.NewClientBuilder().Build()
+	backendCR := &ftpv1.WebDavBackend{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backend",
+			Namespace: "default",
+		},
+		Spec: ftpv1.WebDavBackendSpec{
+			Endpoint: testServer.URL,
+			BasePath: "/base",
+			Credentials: ftpv1.WebDavCredentials{
+				Username: "testuser",
+				Password: "testpass",
+			},
+		},
+	}
+
+	backend, err := newWebDavBackendImpl(context.TODO(), backendCR, kubeClient)
+	require.NoError(t, err)
+
+	n, err := backend.WriteFile("write.txt", strings.NewReader(testContent))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(len(testContent)), n)
+	assert.Equal(t, 0, deletes, "re-encoded image should not be deleted")
+}
+
+func TestWebDavBackendImpl_WriteFileRejectsZeroByteReEncode(t *testing.T) {
+	testContent := "Hello, WebDAV write!"
+	deletes := 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				w.WriteHeader(201)
+				return
+			}
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/base/write.txt" {
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "testuser" && pass == "testpass" {
+				xmlResponse := `<?xml version="1.0" encoding="utf-8"?>
+				<multistatus xmlns="DAV:">
+				  <response>
+				    <href>/base/write.txt</href>
+				    <propstat>
+				      <prop>
+				        <resourcetype/>
+				        <getcontentlength>0</getcontentlength>
+				      </prop>
+				      <status>HTTP/1.1 200 OK</status>
+				    </propstat>
+				  </response>
+				</multistatus>`
+				w.Header().Set("Content-Type", "text/xml")
+				w.WriteHeader(207)
+				_, _ = w.Write([]byte(xmlResponse))
+				return
+			}
+		}
+		if r.Method == "DELETE" {
+			deletes++
+			w.WriteHeader(204)
+			return
+		}
+		if r.Method == "PROPFIND" && r.URL.Path == "/" {
+			w.WriteHeader(200)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer testServer.Close()
+
+	kubeClient := fake.NewClientBuilder().Build()
+	backendCR := &ftpv1.WebDavBackend{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backend",
+			Namespace: "default",
+		},
+		Spec: ftpv1.WebDavBackendSpec{
+			Endpoint: testServer.URL,
+			BasePath: "/base",
+			Credentials: ftpv1.WebDavCredentials{
+				Username: "testuser",
+				Password: "testpass",
+			},
+		},
+	}
+
+	backend, err := newWebDavBackendImpl(context.TODO(), backendCR, kubeClient)
+	require.NoError(t, err)
+
+	_, err = backend.WriteFile("write.txt", strings.NewReader(testContent))
+	assert.Error(t, err)
+	assert.Equal(t, 1, deletes, "zero-byte file should be deleted")
+}
+
 func TestWebDavBackendImpl_Remove(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "DELETE" && r.URL.Path == "/base/delete.txt" {

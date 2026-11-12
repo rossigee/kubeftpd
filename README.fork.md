@@ -1,17 +1,17 @@
 # kubeftpd (fork)
 
 Fork of [rossigee/kubeftpd](https://github.com/rossigee/kubeftpd) at `v0.10.1`
-with eight fixes that the itx-master deployment of the document scanner needs.
+with nine fixes that the itx-master deployment of the document scanner needs.
 
 The operator image of this fork is published as
-`zot.bankrut.lan/bankrut/kubeftpd:v0.10.7` and is deployed by
+`zot.bankrut.lan/bankrut/kubeftpd:v0.10.8` and is deployed by
 `rossgolderltd/flux-itx-master` (`50-applications/kubeftpd`).
 
 **Upstream status.** Upstream released `v0.10.2` on 2026-11-12 with Fix 1: its
 session isolation in `internal/ftp/server.go` and
 `internal/ftp/session_isolation_test.go` are this change, and its
 `CHANGELOG.md` describes it as the root cause of the cross-user access bugs.
-Fixes 2 to 8 are not upstream. They are queued as the branch
+Fixes 2 to 9 are not upstream. They are queued as the branch
 `fix/operator-defects`, rebuilt on top of upstream master and verified there
 (`gofmt`, `go build ./...`, `go vet`, the unit tests of `internal/ftp`,
 `internal/storage` and `internal/backends`), waiting for a GitHub pull request;
@@ -255,6 +255,39 @@ Measured on the live endpoint:
 The scanner sends JPEGs, so the fix sends `image/jpeg`. The test asserts the
 header specifically, so a regression shows up as a missing
 `image/jpeg` response of `500` the moment someone refactors the request.
+
+## Fix 9 - the verification deletes every scan the image pipeline re-encodes
+
+`fix(webdav): accept any non-zero size from the bureaucracy image pipeline`
+
+Every image the bureaucracy module stores goes through `_compute_image_1920`,
+`_compute_image_1024` and friends: PIL decodes, rescales and re-encodes as a
+new JPEG. The bytes it stores are never byte-equal to the ones the scanner
+sent, so
+
+```go
+fileInfo.Size != bytesWritten
+```
+
+was always true for an image ingested by that pipeline — and false for a small
+JPEG that slipped past it. The scanner pushed a 400008-byte scan at 17:07Z,
+the module stored it as `image_1920` at 308893 bytes, kubeftpd reported
+`450 error during transfer: failed to create file: upload verification failed`
+and deleted the attachment.
+
+Measured on the live collection before the fix (delete by `DELETE`):
+
+| sent | stored (`ir.attachment`) | result |
+|---|---|---|
+| 400008 | 308893 | 450 → deleted |
+| 402678 | 312404 | 450 → deleted |
+
+The fix is not to compare bytes at all: a non-zero size is accepted (the
+module chose that size), a zero size is reported as a genuinely failed write
+and deleted. That leaves truncations undetected when the module decides the
+file is a valid, decodable image whose backing stream drops below what it can
+encode — the realistic case is a network glitch finishing mid-image; that case
+will surface as a broken DMS entry for the operator to spot, not silent.
 
 ## The routing test against the live backends
 
