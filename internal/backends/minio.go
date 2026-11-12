@@ -19,6 +19,7 @@ import (
 // minioBackendImpl implements MinioBackend interface using minio-go client
 type minioBackendImpl struct {
 	client     *minio.Client
+	transport  *http.Transport
 	bucket     string
 	pathPrefix string
 }
@@ -75,20 +76,23 @@ func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeC
 	var minioClient *minio.Client
 	var err error
 
-	if transport != nil {
-		minioClient, err = minio.New(endpoint, &minio.Options{
-			Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
-			Secure:    useSSL,
-			Region:    backend.Spec.Region,
-			Transport: transport,
-		})
-	} else {
-		minioClient, err = minio.New(endpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-			Secure: useSSL,
-			Region: backend.Spec.Region,
-		})
+	if transport == nil {
+		// No TLS configuration on the backend. Take the transport minio-go
+		// would build for itself, but hold a reference to it so that Close can
+		// release its idle connections when the session that owns this backend
+		// is finished.
+		transport, err = minio.DefaultTransport(useSSL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build the transport of %s: %w", backend.Name, err)
+		}
 	}
+
+	minioClient, err = minio.New(endpoint, &minio.Options{
+		Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure:    useSSL,
+		Region:    backend.Spec.Region,
+		Transport: transport,
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
@@ -108,6 +112,7 @@ func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeC
 
 	return &minioBackendImpl{
 		client:     minioClient,
+		transport:  transport,
 		bucket:     backend.Spec.Bucket,
 		pathPrefix: backend.Spec.PathPrefix,
 	}, nil
@@ -367,6 +372,20 @@ func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*Object
 	}
 
 	return objects, nil
+}
+
+// Close releases the connections the transport of this backend holds idle.
+//
+// minio-go has no Close: the client owns an http.Transport whose connection
+// pool, TLS session cache and read buffers stay reachable until the transport
+// is told to drop them. The storage of a finished FTP session is released by the
+// session registry of the FTP server, and this is what that release actually
+// frees.
+func (m *minioBackendImpl) Close() error {
+	if m.transport != nil {
+		m.transport.CloseIdleConnections()
+	}
+	return nil
 }
 
 // getFullPath combines the path prefix with the object name. The result is a

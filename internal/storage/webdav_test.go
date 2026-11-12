@@ -76,6 +76,13 @@ func (m *MockWebDavBackend) ReadDir(dirPath string) ([]*backends.FileInfo, error
 	return args.Get(0).([]*backends.FileInfo), args.Error(1)
 }
 
+// Close lets the mock stand for a backend that owns resources, which is
+// what webdavStorage.Close asks for.
+func (m *MockWebDavBackend) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func createTestWebDavStorage(user *ftpv1.User, backend backends.WebDavBackend) *webdavStorage {
 	return &webdavStorage{
 		user:       user,
@@ -360,8 +367,11 @@ func TestWebdavFileInfo_Accessors(t *testing.T) {
 	assert.Empty(t, fi.Group())
 	assert.Nil(t, fi.Sys())
 
-	s := createTestWebDavStorage(webdavTestUser(ftpv1.UserPermissions{}), &MockWebDavBackend{})
+	backend := &MockWebDavBackend{}
+	backend.On("Close").Return(nil).Once()
+	s := createTestWebDavStorage(webdavTestUser(ftpv1.UserPermissions{}), backend)
 	assert.NoError(t, s.Close())
+	backend.AssertExpectations(t)
 }
 
 // A failing existence check is an error, not a "directory does not exist".

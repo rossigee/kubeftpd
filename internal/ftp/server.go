@@ -421,17 +421,48 @@ func (driver *KubeDriver) sessionFor(key, username, clientIP string) (*driverSes
 	return sess, nil
 }
 
-// evictStaleSessions drops the sessions that have been idle for longer than
-// driverSessionTTL. goftp.io/server/v2 never calls Driver.Close, so this is
-// the only place where the storage implementation of a finished session is
-// released.
+// evictStaleSessions releases the sessions that are no longer in use.
+//
+// goftp.io/server/v2 never calls Driver.Close: Session.Serve ends at
+// sess.Close(), which only shuts the socket. This is therefore the only place
+// where the storage of a finished session, and with it the transport of its
+// backend, is released.
+//
+// A session goes when it has been idle for driverSessionTTL: the FTP server
+// drops an idle connection after 30 minutes, so an entry older than that has no
+// connection behind it. maxDriverSessions is then a hard bound, released by
+// least recent use: a burst of new connections must not be able to hold on to
+// an unbounded number of backends while the stale ones have not aged out yet.
 func (driver *KubeDriver) evictStaleSessions() {
 	now := time.Now()
+	stale := 0
 	for key, sess := range driver.sessions {
 		if now.Sub(sess.lastUsed) > driverSessionTTL {
 			_ = sess.storage.Close()
 			delete(driver.sessions, key)
+			stale++
 		}
+	}
+
+	over := 0
+	for len(driver.sessions) > maxDriverSessions {
+		oldestKey, oldest := "", now
+		for key, sess := range driver.sessions {
+			if sess.lastUsed.Before(oldest) {
+				oldestKey, oldest = key, sess.lastUsed
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		_ = driver.sessions[oldestKey].storage.Close()
+		delete(driver.sessions, oldestKey)
+		over++
+	}
+
+	if stale > 0 || over > 0 {
+		getLogger().Info("FTP session registry pruned",
+			"stale", stale, "over_bound", over, "retained", len(driver.sessions))
 	}
 }
 
