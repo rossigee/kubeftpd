@@ -206,6 +206,32 @@ through `io.Closer`, and pruning runs on the age of a session with the bound
 enforced by least recent use - `goftp.io/server/v2` never calls `Driver.Close`,
 so the registry is the only place that can.
 
+**What the registry cannot do** is release a session the moment its connection
+closes, because the engine has no such signal:
+
+- `server.Driver` (`driver.go:29-64` in v2.0.3) declares no close method, and
+  nothing in the server calls one; `Session.Serve` ends at `sess.Close()`, which
+  only shuts the socket and clears the session's own fields.
+- `server.Notifier` (`notifier.go:8-24`) reports logins, transfers, deletions and
+  directory changes - no connection end.
+- The identity that reaches `KubeLogger.Print` as `session_id`, and which goftp
+  logs as `"Connection Terminated"` on every close, is the unexported
+  `Session.id`: 20 hex characters from `newSessionID()`'s random bytes, with no
+  accessor on the `*server.Session` the driver receives in `ctx.Sess`. The log
+  line carries the id, the registry keys on the pointer, and there is no way to
+  pair them - pairing them by command order would break the moment two sessions
+  run the same command at once.
+
+What that costs in practice: an entry lives up to `driverSessionTTL` (30 minutes,
+which is the same as the FTP idle timeout) after its connection ends, holding a
+`*ftpv1.User`, its storage and its transport. The transport's idle connections
+expire by themselves (`IdleConnTimeout: 30s` on the MinIO transport, the
+`http.Transport` default of 90s on the WebDAV one), and 13 real transfers left the
+process at exactly the 123 goroutines and ~20MB of live heap it idles at, so the
+retained entries are not measurable. Releasing at disconnect would need an engine
+that reports it; that is a bigger change than this fork exists to carry, and the
+numbers above say it is not what limits this deployment.
+
 ## The routing test against the live backends
 
 `internal/ftp/live_routing_test.go` writes a file through a session of the
