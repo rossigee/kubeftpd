@@ -44,7 +44,7 @@ Passive (PASV) mode is supported. Active mode is planned.
    ```bash
    kubectl create namespace kubeftpd-system
    helm install kubeftpd oci://ghcr.io/rossigee/kubeftpd/charts/kubeftpd \
-     --version 0.10.3 \
+     --version 0.10.4 \
      --namespace kubeftpd-system \
      --set webhook.enabled=true
    ```
