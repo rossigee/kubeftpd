@@ -4,7 +4,7 @@ Fork of [rossigee/kubeftpd](https://github.com/rossigee/kubeftpd) at `v0.10.1`
 with eight fixes that the itx-master deployment of the document scanner needs.
 
 The operator image of this fork is published as
-`zot.bankrut.lan/bankrut/kubeftpd:v0.10.6` and is deployed by
+`zot.bankrut.lan/bankrut/kubeftpd:v0.10.7` and is deployed by
 `rossgolderltd/flux-itx-master` (`50-applications/kubeftpd`).
 
 **Upstream status.** Upstream released `v0.10.2` on 2026-11-12 with Fix 1: its
@@ -199,12 +199,10 @@ maximum count, still reach a 156GB object, which no scanner produces.
 `minioStorage.Close` and `webdavStorage.Close` said the client "does not require
 explicit closing" and returned nil, while each backend owns an `http.Transport`
 that keeps its connection pool, TLS session cache and read buffers reachable
-until `CloseIdleConnections`. The session registry only pruned once it held
-`maxDriverSessions` entries, so a hundred sessions of the printer held a hundred
-transports. Each backend now closes its own transport, the storages call it
-through `io.Closer`, and pruning runs on the age of a session with the bound
-enforced by least recent use - `goftp.io/server/v2` never calls `Driver.Close`,
-so the registry is the only place that can.
+until `CloseIdleConnections`. Each backend now closes its own transport, the
+storages call it through `io.Closer`, and pruning runs on every session creation,
+matching upstream PR #187. `goftp.io/server/v2` never calls `Driver.Close`, so the
+registry is the only place that can.
 
 **What the registry cannot do** is release a session the moment its connection
 closes, because the engine has no such signal:
@@ -326,8 +324,9 @@ published under a fresh tag.
 
 The cluster's `ImagePolicy` resolves the highest semver tag of the zot
 repository, so **every fork release is tagged above the newest upstream release**.
-`v0.10.5` carried Fixes 1–7, `v0.10.6` adds the WebDAV Content-Type fix, and the
-next one is numbered above whatever upstream has published by then. Upstream's
+`v0.10.5` carried Fixes 1–7, `v0.10.6` added the WebDAV Content-Type fix, and
+`v0.10.7` aligns Fix 7 with upstream PR #187 (the session bound that
+upstream removed). The next one is numbered above whatever upstream has published by then. Upstream's
 next release may well be `v0.10.3` - a lower number with newer content - and the
 policy must never be led by that.
 
@@ -340,10 +339,10 @@ an image because its tag happens to sort higher than the deployed one.
 
 ```bash
 docker build --network=host \
-  --build-arg VERSION=v0.10.6 \
+  --build-arg VERSION=v0.10.7 \
   --build-arg COMMIT="$(git rev-parse --short HEAD)" \
   --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.6 .
+  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.7 .
 ```
 
 The build needs the host network: the module download is very slow over the

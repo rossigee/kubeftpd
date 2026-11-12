@@ -318,12 +318,6 @@ type driverSession struct {
 	lastUsed time.Time
 }
 
-// maxDriverSessions bounds the session registry. The FTP server limits the
-// number of concurrent connections (settings.maxConnections), so the registry
-// only grows beyond that bound when connections are closed without the driver
-// being notified, which goftp.io/server/v2 does not do.
-const maxDriverSessions = 256
-
 // driverSessionTTL is how long an unused session is kept in the registry.
 // The FTP idle timeout is 30 minutes, so a session that has been idle for
 // longer than that is gone.
@@ -436,39 +430,14 @@ func (driver *KubeDriver) sessionFor(key, username, clientIP string) (*driverSes
 //
 // A session goes when it has been idle for driverSessionTTL: the FTP server
 // drops an idle connection after 30 minutes, so an entry older than that has no
-// connection behind it. maxDriverSessions is then a hard bound, released by
-// least recent use: a burst of new connections must not be able to hold on to
-// an unbounded number of backends while the stale ones have not aged out yet.
+// connection behind it. This is the same eviction upstream PR #187 adopted.
 func (driver *KubeDriver) evictStaleSessions() {
 	now := time.Now()
-	stale := 0
 	for key, sess := range driver.sessions {
 		if now.Sub(sess.lastUsed) > driverSessionTTL {
 			_ = sess.storage.Close()
 			delete(driver.sessions, key)
-			stale++
 		}
-	}
-
-	over := 0
-	for len(driver.sessions) > maxDriverSessions {
-		oldestKey, oldest := "", now
-		for key, sess := range driver.sessions {
-			if sess.lastUsed.Before(oldest) {
-				oldestKey, oldest = key, sess.lastUsed
-			}
-		}
-		if oldestKey == "" {
-			break
-		}
-		_ = driver.sessions[oldestKey].storage.Close()
-		delete(driver.sessions, oldestKey)
-		over++
-	}
-
-	if stale > 0 || over > 0 {
-		getLogger().Info("FTP session registry pruned",
-			"stale", stale, "over_bound", over, "retained", len(driver.sessions))
 	}
 }
 
