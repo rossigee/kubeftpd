@@ -1,7 +1,7 @@
 # kubeftpd (fork)
 
 Fork of [rossigee/kubeftpd](https://github.com/rossigee/kubeftpd) at `v0.10.1`
-with four fixes that the itx-master deployment of the document scanner needs.
+with five fixes that the itx-master deployment of the document scanner needs.
 
 The operator image of this fork is published as
 `zot.bankrut.lan/bankrut/kubeftpd:v0.10.4` and is deployed by
@@ -85,10 +85,10 @@ return path.Join(s.basePath, relativePath) // /<home>/<home>/scan001.pdf
 
 So the home was applied twice. For the scanner users of itx-master, whose home
 is their bucket prefix (`/archive`, `/receipts`, ...), the consequence was that
-their own directory looked empty (`LIST /` returned nothing) and every upload
-landed one level deeper than intended, at `archive/archive/<file>` in the
-bucket `document-scans`. The WebDAV user masked the defect because its home is
-`/`, where joining the home twice is a no-op.
+every upload landed one level deeper than intended, at `archive/archive/<file>`
+in the bucket `document-scans`, and their own directory showed nothing. The
+WebDAV user masked the defect because its home is `/`, where joining the home
+twice is a no-op.
 
 The chroot validation still resolves the real path to decide whether the
 request stays inside the home, and now returns the virtual path within the
@@ -97,6 +97,54 @@ once.
 
 `internal/ftp/server.go`, `internal/ftp/chroot_test.go`,
 `internal/ftp/driver_test.go`
+
+## Fix 5 - a MinIO key never starts with a slash, and a directory prefix ends with one
+
+`fix(minio): list the bucket-relative keys below the requested prefix`
+
+With `pathPrefix` empty, `getFullPath` returned the name it was given
+unchanged, and the storage layer hands it a path that starts with the home
+directory of the user: `/archive`. `PutObject`, `GetObject` and `StatObject`
+survive that, because minio-go puts the name in the request path and MinIO
+cleans the path, but `ListObjects` sends the name as the `prefix` query
+parameter, and a list prefix is matched against the stored keys verbatim. No
+key starts with a slash, so listing `/archive` returned nothing:
+
+```
+prefix='/archive'  0 keys
+prefix='archive'  23 keys  archive/archive/archive_001845.jpg, ...
+```
+
+The trailing slash matters as much as the leading one. S3 rolls the keys up by
+the delimiter after the prefix, so `archive` is a name prefix, not a directory:
+MinIO answers it with the single common prefix `archive/` and no object at all.
+
+```xml
+<ListBucketResult><Prefix>archive</Prefix><KeyCount>1</KeyCount>
+<CommonPrefixes><Prefix>archive/</Prefix></CommonPrefixes></ListBucketResult>
+```
+
+`archive/` is the directory, and it returns the objects in it. Both mistakes
+show up the same way, as an empty home directory, which is why the fake S3
+endpoint of the tests now rolls keys up into `CommonPrefixes` the way S3 does:
+it used to return every key below the prefix whatever the delimiter, and that
+hid the defect.
+
+That is the other half of an empty `LIST /`: even with the home applied once
+(Fix 4), the user's own directory stayed empty, and `DeleteDir` removed
+nothing because it passed the same unusable prefix to `RemoveObjects`. It also
+made the doubled uploads of Fix 4 invisible instead of visible as one
+`archive` subdirectory.
+
+`getFullPath` now always returns a bucket-relative key, `ListObjects` gives the
+prefix its trailing slash and returns the keys relative to that prefix, which
+is what its only caller (`minioStorage.ListDir`) already wanted: listing
+`archive` yields `scan.jpg` and `sub/x.jpg`. The `no prefix keeps leading
+slash` case of `TestMinioBackendImpl_GetFullPath` asserted the defect and is
+replaced by `no prefix drops leading slash` and `root`.
+
+`internal/backends/minio.go`, `internal/backends/minio_objects_test.go`,
+`internal/storage/minio.go`, `internal/storage/minio_test.go`
 
 ## The routing test against the live backends
 
@@ -129,10 +177,10 @@ ClusterIP of its service.
 
 ```bash
 docker build --network=host \
-  --build-arg VERSION=v0.10.3 \
+  --build-arg VERSION=v0.10.4 \
   --build-arg COMMIT="$(git rev-parse --short HEAD)" \
   --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.3 .
+  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.4 .
 ```
 
 The build needs the host network: the module download is very slow over the

@@ -325,10 +325,20 @@ func (m *minioBackendImpl) CopyObject(srcObject, dstObject string, deleteSource 
 	return nil
 }
 
-// ListObjects lists objects with a prefix
+// ListObjects lists the objects below prefix. Every returned key is relative to
+// that prefix, so listing "archive" gives "scan.jpg" and "sub/x.jpg" rather
+// than the full bucket keys.
 func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*ObjectInfo, error) {
 	ctx := context.Background()
 	fullPrefix := m.getFullPath(prefix)
+
+	// A directory listing needs the trailing slash. S3 groups the keys under
+	// the delimiter by the text after the prefix, so "archive" is only a name
+	// prefix: MinIO answers it with the single common prefix "archive/" and no
+	// object at all. "archive/" is the directory.
+	if fullPrefix != "" && !strings.HasSuffix(fullPrefix, "/") {
+		fullPrefix += "/"
+	}
 
 	opts := minio.ListObjectsOptions{
 		Prefix:    fullPrefix,
@@ -342,10 +352,11 @@ func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*Object
 			return nil, fmt.Errorf("failed to list objects: %w", objInfo.Err)
 		}
 
-		// Remove the full prefix to get relative path
-		relativePath := strings.TrimPrefix(objInfo.Key, m.pathPrefix)
+		// The caller wants the entries of the directory it listed, so return
+		// the key relative to that prefix. The prefix carries no leading slash
+		// (see getFullPath), so neither does the result.
+		relativePath := strings.TrimPrefix(objInfo.Key, fullPrefix)
 		relativePath = strings.TrimPrefix(relativePath, "/")
-
 		objects = append(objects, &ObjectInfo{
 			Key:          relativePath,
 			Size:         objInfo.Size,
@@ -358,17 +369,20 @@ func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*Object
 	return objects, nil
 }
 
-// getFullPath combines the path prefix with the object name
+// getFullPath combines the path prefix with the object name. The result is a
+// bucket-relative key: no key in a bucket starts with a slash, and a list
+// prefix is matched against the keys verbatim, so a leading slash makes
+// everything below it invisible.
 func (m *minioBackendImpl) getFullPath(objectName string) string {
+	// Remove leading / from object name if present
+	objectName = strings.TrimPrefix(objectName, "/")
+
 	if m.pathPrefix == "" {
 		return objectName
 	}
 
 	// Ensure path prefix ends with /
 	prefix := strings.TrimSuffix(m.pathPrefix, "/") + "/"
-
-	// Remove leading / from object name if present
-	objectName = strings.TrimPrefix(objectName, "/")
 
 	return prefix + objectName
 }

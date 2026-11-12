@@ -107,11 +107,8 @@ func (s *minioStorage) ListDir(dirPath string, callback func(os.FileInfo) error)
 	seenDirs := make(map[string]bool)
 
 	for _, obj := range objects {
-		// Get relative path from the listing prefix
-		relativePath := strings.TrimPrefix(obj.Key, fullPath)
-
-		// Remove leading slash
-		relativePath = strings.TrimPrefix(relativePath, "/")
+		// The backend returns the keys relative to the prefix that was listed.
+		relativePath := obj.Key
 
 		// The listed directory's own marker object (e.g. "dir/") has nothing left
 		// after trimming; it is not an entry and must not surface as one with an empty name.
