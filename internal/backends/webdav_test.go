@@ -481,16 +481,22 @@ func TestWebDavBackendImpl_WriteFile(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "PUT" && r.URL.Path == "/base/write.txt" {
 			user, pass, ok := r.BasicAuth()
-			if ok && user == "testuser" && pass == "testpass" {
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					w.WriteHeader(500)
-					return
-				}
-				if string(body) == testContent {
-					w.WriteHeader(201)
-					return
-				}
+			if !ok || user != "testuser" || pass != "testpass" {
+				w.WriteHeader(401)
+				return
+			}
+			if got := r.Header.Get("Content-Type"); got != "image/jpeg" {
+				w.WriteHeader(500)
+				return
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(500)
+				return
+			}
+			if string(body) == testContent {
+				w.WriteHeader(201)
+				return
 			}
 		}
 		if r.Method == "PROPFIND" && r.URL.Path == "/base/write.txt" {

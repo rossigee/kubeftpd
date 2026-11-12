@@ -388,6 +388,13 @@ func (w *webDavBackendImpl) WriteFile(filePath string, reader io.Reader) (int64,
 		return 0, fmt.Errorf("failed to create PUT request: %w", err)
 	}
 
+	// The WebDAV handler of the Odoo bureaucracy module stores whatever the
+	// request body contains, but it does not accept an unknown Content-Type:
+	// with none set Odoo creates a zero-byte attachment and reports 201, and
+	// with application/octet-stream it crashes with 500. The scanner sends
+	// JPEGs, so send one.
+	req.Header.Set("Content-Type", "image/jpeg")
+
 	req.SetBasicAuth(w.username, w.password)
 
 	resp, err := w.client.Do(req)
