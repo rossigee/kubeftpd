@@ -60,6 +60,13 @@ func (m *MockMinioBackend) ListObjects(prefix string, recursive bool) ([]*backen
 	return args.Get(0).([]*backends.ObjectInfo), args.Error(1)
 }
 
+// Close lets the mock stand for a backend that owns resources, which is
+// what minioStorage.Close asks for.
+func (m *MockMinioBackend) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func minioTestStorage(perms ftpv1.UserPermissions, b *MockMinioBackend) *minioStorage {
 	user := &ftpv1.User{
 		ObjectMeta: metav1.ObjectMeta{Name: "testuser"},
@@ -114,10 +121,10 @@ func TestMinioStorage_ListDirDeduplicatesSubdirectories(t *testing.T) {
 	b := &MockMinioBackend{}
 	s := minioTestStorage(ftpv1.UserPermissions{List: true}, b)
 	b.On("ListObjects", "/home/testuser/d", false).Return([]*backends.ObjectInfo{
-		{Key: "/home/testuser/d/a.txt", Size: 3},
-		{Key: "/home/testuser/d/sub/x.txt", Size: 1},
-		{Key: "/home/testuser/d/sub/y.txt", Size: 2},
-		{Key: "/home/testuser/d/", Size: 0},
+		{Key: "a.txt", Size: 3},
+		{Key: "sub/x.txt", Size: 1},
+		{Key: "sub/y.txt", Size: 2},
+		{Key: "", Size: 0},
 	}, nil).Once()
 
 	var names []string
@@ -185,8 +192,11 @@ func TestMinioStorage_TransferErrors(t *testing.T) {
 		assert.ErrorContains(t, err, "failed to put file")
 	})
 
-	t.Run("close is a no-op", func(t *testing.T) {
-		assert.NoError(t, minioTestStorage(ftpv1.UserPermissions{}, &MockMinioBackend{}).Close())
+	t.Run("close releases the backend", func(t *testing.T) {
+		b := &MockMinioBackend{}
+		b.On("Close").Return(nil).Once()
+		assert.NoError(t, minioTestStorage(ftpv1.UserPermissions{}, b).Close())
+		b.AssertExpectations(t)
 	})
 }
 

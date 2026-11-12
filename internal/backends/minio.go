@@ -19,8 +19,31 @@ import (
 // minioBackendImpl implements MinioBackend interface using minio-go client
 type minioBackendImpl struct {
 	client     *minio.Client
+	transport  *http.Transport
 	bucket     string
 	pathPrefix string
+}
+
+// uploadPartSize is the part size of a streaming upload, in bytes.
+//
+// An FTP transfer has no length until its last byte has arrived, so PutObject
+// uploads with an unknown size. minio-go plans an unknown-size upload for the
+// largest object the layout allows and, when the caller gives no part size,
+// chooses a part of about 537MiB: api-put-object-common.go says "When object
+// size is unknown (-1), default to 5TiB (or the maximum object size, when
+// lower) to limit memory usage. This results in ~537MiB part sizes. For larger
+// objects (up to the maximum object size), callers should set
+// configuredPartSize explicitly to control memory usage". One scanner page of
+// 0.3MB therefore put a 537MiB buffer of live heap behind it, and that buffer
+// was still reachable when the next transfer began, so the second upload of a
+// burst crossed the container's memory limit before the garbage collector ran.
+// The smallest part the library accepts bounds one upload to that instead, and
+// 10000 of them - the maximum part count - still cover a 156GB object.
+const uploadPartSize uint64 = 16 << 20
+
+// uploadOptions returns the options of a streaming upload.
+func uploadOptions() minio.PutObjectOptions {
+	return minio.PutObjectOptions{PartSize: uploadPartSize}
 }
 
 // newMinioBackendImpl creates a new MinIO backend implementation
@@ -75,20 +98,23 @@ func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeC
 	var minioClient *minio.Client
 	var err error
 
-	if transport != nil {
-		minioClient, err = minio.New(endpoint, &minio.Options{
-			Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
-			Secure:    useSSL,
-			Region:    backend.Spec.Region,
-			Transport: transport,
-		})
-	} else {
-		minioClient, err = minio.New(endpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-			Secure: useSSL,
-			Region: backend.Spec.Region,
-		})
+	if transport == nil {
+		// No TLS configuration on the backend. Take the transport minio-go
+		// would build for itself, but hold a reference to it so that Close can
+		// release its idle connections when the session that owns this backend
+		// is finished.
+		transport, err = minio.DefaultTransport(useSSL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build the transport of %s: %w", backend.Name, err)
+		}
 	}
+
+	minioClient, err = minio.New(endpoint, &minio.Options{
+		Creds:     credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure:    useSSL,
+		Region:    backend.Spec.Region,
+		Transport: transport,
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
@@ -108,6 +134,7 @@ func newMinioBackendImpl(ctx context.Context, backend *ftpv1.MinioBackend, kubeC
 
 	return &minioBackendImpl{
 		client:     minioClient,
+		transport:  transport,
 		bucket:     backend.Spec.Bucket,
 		pathPrefix: backend.Spec.PathPrefix,
 	}, nil
@@ -210,7 +237,7 @@ func (m *minioBackendImpl) PutObject(objectName string, reader io.Reader, size i
 	fullPath := m.getFullPath(objectName)
 
 	// Upload object and get upload info
-	uploadInfo, err := m.client.PutObject(ctx, m.bucket, fullPath, reader, size, minio.PutObjectOptions{})
+	uploadInfo, err := m.client.PutObject(ctx, m.bucket, fullPath, reader, size, uploadOptions())
 	if err != nil {
 		return fmt.Errorf("failed to put object %s: %w", objectName, err)
 	}
@@ -325,10 +352,20 @@ func (m *minioBackendImpl) CopyObject(srcObject, dstObject string, deleteSource 
 	return nil
 }
 
-// ListObjects lists objects with a prefix
+// ListObjects lists the objects below prefix. Every returned key is relative to
+// that prefix, so listing "archive" gives "scan.jpg" and "sub/x.jpg" rather
+// than the full bucket keys.
 func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*ObjectInfo, error) {
 	ctx := context.Background()
 	fullPrefix := m.getFullPath(prefix)
+
+	// A directory listing needs the trailing slash. S3 groups the keys under
+	// the delimiter by the text after the prefix, so "archive" is only a name
+	// prefix: MinIO answers it with the single common prefix "archive/" and no
+	// object at all. "archive/" is the directory.
+	if fullPrefix != "" && !strings.HasSuffix(fullPrefix, "/") {
+		fullPrefix += "/"
+	}
 
 	opts := minio.ListObjectsOptions{
 		Prefix:    fullPrefix,
@@ -342,10 +379,11 @@ func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*Object
 			return nil, fmt.Errorf("failed to list objects: %w", objInfo.Err)
 		}
 
-		// Remove the full prefix to get relative path
-		relativePath := strings.TrimPrefix(objInfo.Key, m.pathPrefix)
+		// The caller wants the entries of the directory it listed, so return
+		// the key relative to that prefix. The prefix carries no leading slash
+		// (see getFullPath), so neither does the result.
+		relativePath := strings.TrimPrefix(objInfo.Key, fullPrefix)
 		relativePath = strings.TrimPrefix(relativePath, "/")
-
 		objects = append(objects, &ObjectInfo{
 			Key:          relativePath,
 			Size:         objInfo.Size,
@@ -358,17 +396,34 @@ func (m *minioBackendImpl) ListObjects(prefix string, recursive bool) ([]*Object
 	return objects, nil
 }
 
-// getFullPath combines the path prefix with the object name
+// Close releases the connections the transport of this backend holds idle.
+//
+// minio-go has no Close: the client owns an http.Transport whose connection
+// pool, TLS session cache and read buffers stay reachable until the transport
+// is told to drop them. The storage of a finished FTP session is released by the
+// session registry of the FTP server, and this is what that release actually
+// frees.
+func (m *minioBackendImpl) Close() error {
+	if m.transport != nil {
+		m.transport.CloseIdleConnections()
+	}
+	return nil
+}
+
+// getFullPath combines the path prefix with the object name. The result is a
+// bucket-relative key: no key in a bucket starts with a slash, and a list
+// prefix is matched against the keys verbatim, so a leading slash makes
+// everything below it invisible.
 func (m *minioBackendImpl) getFullPath(objectName string) string {
+	// Remove leading / from object name if present
+	objectName = strings.TrimPrefix(objectName, "/")
+
 	if m.pathPrefix == "" {
 		return objectName
 	}
 
 	// Ensure path prefix ends with /
 	prefix := strings.TrimSuffix(m.pathPrefix, "/") + "/"
-
-	// Remove leading / from object name if present
-	objectName = strings.TrimPrefix(objectName, "/")
 
 	return prefix + objectName
 }

@@ -46,11 +46,12 @@ type davProp struct {
 
 // webDavBackendImpl implements WebDavBackend interface using HTTP client
 type webDavBackendImpl struct {
-	client   *http.Client
-	endpoint string
-	basePath string
-	username string
-	password string
+	client    *http.Client
+	transport *http.Transport
+	endpoint  string
+	basePath  string
+	username  string
+	password  string
 }
 
 // newWebDavBackendImpl creates a new WebDAV backend implementation
@@ -72,10 +73,11 @@ func newWebDavBackendImpl(ctx context.Context, backend *ftpv1.WebDavBackend, kub
 		}
 	}
 
-	// Configure HTTP client
-	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	// Configure HTTP client. The transport is built here and kept on the
+	// backend so that Close can release the idle connections of a session that
+	// has finished. Cloning http.DefaultTransport keeps the proxy, the dialer
+	// and the idle-connection behaviour the client would otherwise have used.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
 
 	// Configure TLS if specified
 	if backend.Spec.TLS != nil {
@@ -90,9 +92,12 @@ func newWebDavBackendImpl(ctx context.Context, backend *ftpv1.WebDavBackend, kub
 		if err != nil {
 			return nil, fmt.Errorf("failed to build TLS config: %w", err)
 		}
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: tlsConfig,
-		}
+		transport.TLSClientConfig = tlsConfig
+	}
+
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
 	}
 
 	// Test connection with a PROPFIND request
@@ -115,12 +120,27 @@ func newWebDavBackendImpl(ctx context.Context, backend *ftpv1.WebDavBackend, kub
 	}
 
 	return &webDavBackendImpl{
-		client:   httpClient,
-		endpoint: strings.TrimSuffix(backend.Spec.Endpoint, "/"),
-		basePath: backend.Spec.BasePath,
-		username: username,
-		password: password,
+		client:    httpClient,
+		transport: transport,
+		endpoint:  strings.TrimSuffix(backend.Spec.Endpoint, "/"),
+		basePath:  backend.Spec.BasePath,
+		username:  username,
+		password:  password,
 	}, nil
+}
+
+// Close releases the connections the transport of this backend holds idle.
+//
+// An http.Client has no Close: its transport keeps the connection pool, the TLS
+// session cache and the read buffers of every server it has spoken to until
+// CloseIdleConnections drops them. The storage of a finished FTP session is
+// released by the session registry of the FTP server, and this is what that
+// release actually frees.
+func (w *webDavBackendImpl) Close() error {
+	if w.transport != nil {
+		w.transport.CloseIdleConnections()
+	}
+	return nil
 }
 
 // getWebDavCredentialsFromSecret retrieves WebDAV credentials from a Kubernetes Secret
@@ -182,6 +202,30 @@ func matchDAVResponse(responses []davResponseEntry, requestPath string) *davResp
 		}
 	}
 	return nil
+}
+
+// isCollectionOf reports whether the requested path is the collection that
+// holds the given responses.
+func isCollectionOf(responses []davResponseEntry, requestPath string) bool {
+	want := strings.TrimSuffix(requestPath, "/")
+	for i := range responses {
+		hrefURL, err := url.Parse(responses[i].Href)
+		if err != nil {
+			continue
+		}
+		h := strings.TrimSuffix(hrefURL.Path, "/")
+		if h == "" {
+			continue
+		}
+		parent := h[:strings.LastIndex(h, "/")]
+		if parent == "" {
+			parent = "/"
+		}
+		if strings.HasSuffix(want, parent) {
+			return true
+		}
+	}
+	return false
 }
 
 // Stat returns file/directory information
@@ -260,6 +304,16 @@ func applyPropfindResponse(fi *FileInfo, body []byte, requestPath string) error 
 
 	entry := matchDAVResponse(ms.Responses, requestPath)
 	if entry == nil {
+		// Some WebDAV servers (the Odoo bureaucracy module) answer a
+		// PROPFIND on a collection with the entries of its children
+		// instead of an entry for the collection itself. The requested path
+		// is that collection when one of the returned entries is a child of
+		// it, which keeps "CWD /" working on such a server.
+		if isCollectionOf(ms.Responses, requestPath) {
+			fi.IsDir = true
+			fi.Mode = 0755
+			return nil
+		}
 		return errWebDAVNotFound
 	}
 	for _, ps := range entry.Propstat {

@@ -318,6 +318,12 @@ type driverSession struct {
 	lastUsed time.Time
 }
 
+// maxDriverSessions bounds the session registry. The FTP server limits the
+// number of concurrent connections (settings.maxConnections), so the registry
+// only grows beyond that bound when connections are closed without the driver
+// being notified, which goftp.io/server/v2 does not do.
+const maxDriverSessions = 256
+
 // driverSessionTTL is how long an unused session is kept in the registry.
 // The FTP idle timeout is 30 minutes, so a session that has been idle for
 // longer than that is gone.
@@ -421,17 +427,48 @@ func (driver *KubeDriver) sessionFor(key, username, clientIP string) (*driverSes
 	return sess, nil
 }
 
-// evictStaleSessions drops the sessions that have been idle for longer than
-// driverSessionTTL. goftp.io/server/v2 never calls Driver.Close, so this is
-// the only place where the storage implementation of a finished session is
-// released.
+// evictStaleSessions releases the sessions that are no longer in use.
+//
+// goftp.io/server/v2 never calls Driver.Close: Session.Serve ends at
+// sess.Close(), which only shuts the socket. This is therefore the only place
+// where the storage of a finished session, and with it the transport of its
+// backend, is released.
+//
+// A session goes when it has been idle for driverSessionTTL: the FTP server
+// drops an idle connection after 30 minutes, so an entry older than that has no
+// connection behind it. maxDriverSessions is then a hard bound, released by
+// least recent use: a burst of new connections must not be able to hold on to
+// an unbounded number of backends while the stale ones have not aged out yet.
 func (driver *KubeDriver) evictStaleSessions() {
 	now := time.Now()
+	stale := 0
 	for key, sess := range driver.sessions {
 		if now.Sub(sess.lastUsed) > driverSessionTTL {
 			_ = sess.storage.Close()
 			delete(driver.sessions, key)
+			stale++
 		}
+	}
+
+	over := 0
+	for len(driver.sessions) > maxDriverSessions {
+		oldestKey, oldest := "", now
+		for key, sess := range driver.sessions {
+			if sess.lastUsed.Before(oldest) {
+				oldestKey, oldest = key, sess.lastUsed
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		_ = driver.sessions[oldestKey].storage.Close()
+		delete(driver.sessions, oldestKey)
+		over++
+	}
+
+	if stale > 0 || over > 0 {
+		getLogger().Info("FTP session registry pruned",
+			"stale", stale, "over_bound", over, "retained", len(driver.sessions))
 	}
 }
 
@@ -530,6 +567,17 @@ func resolveChrootPath(requestedPath, homeDir string) string {
 	return filepath.Join(cleanHome, cleanRequested)
 }
 
+// chrootVirtualPath normalises a requested path into the virtual space of the
+// user's home: an absolute, cleaned, POSIX-style path such as "/" or
+// "/sub/file". Storage implementations join the path they receive with their
+// base path, which is the user's homeDirectory, so the home must not be
+// applied here as well. Applying it in both places resolved "/file" to
+// "<home>/<home>/file": the user's own directory looked empty and every upload
+// landed one level too deep.
+func chrootVirtualPath(requestedPath string) string {
+	return filepath.Join("/", filepath.Clean(requestedPath))
+}
+
 // isPathWithinHome validates that the resolved path stays within the user's home directory
 func isPathWithinHome(resolvedPath, homeDir string) bool {
 	// Clean and normalize both paths
@@ -570,9 +618,11 @@ func (sess *driverSession) validateChrootPath(path string) (string, error) {
 	}
 
 	logger := getLogger()
-	logger.Info("Chroot path resolved", "username", sess.username, "requested_path", path, "resolved_path", resolvedPath)
+	logger.Info("Chroot path resolved", "username", sess.username, "requested_path", path, "resolved_path", resolvedPath, "storage_path", chrootVirtualPath(path))
 
-	return resolvedPath, nil
+	// The storage layer joins the user's homeDirectory with the path it is
+	// given, so hand it the virtual path rather than the real one.
+	return chrootVirtualPath(path), nil
 }
 
 func (driver *KubeDriver) ChangeDir(ctx *server.Context, path string) error {

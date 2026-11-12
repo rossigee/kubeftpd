@@ -77,7 +77,7 @@ func (f *fakeS3) serveBucket(w http.ResponseWriter, r *http.Request, bucket stri
 	case r.Method == http.MethodHead:
 		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodGet && q.Get("list-type") == "2":
-		f.list(w, bucket, q.Get("prefix"))
+		f.list(w, bucket, q.Get("prefix"), q.Get("delimiter"))
 	case r.Method == http.MethodPost && q.Has("delete"):
 		f.multiDelete(w, r, bucket)
 	default:
@@ -274,11 +274,16 @@ func parseRange(header string, size int) (int, int) {
 }
 
 type s3ListResult struct {
-	XMLName  xml.Name `xml:"ListBucketResult"`
-	Name     string   `xml:"Name"`
-	Prefix   string   `xml:"Prefix"`
-	KeyCount int      `xml:"KeyCount"`
-	Contents []s3Content
+	XMLName        xml.Name `xml:"ListBucketResult"`
+	Name           string   `xml:"Name"`
+	Prefix         string   `xml:"Prefix"`
+	KeyCount       int      `xml:"KeyCount"`
+	Contents       []s3Content
+	CommonPrefixes []s3CommonPrefix
+}
+
+type s3CommonPrefix struct {
+	Prefix string `xml:"Prefix"`
 }
 
 type s3Content struct {
@@ -289,12 +294,27 @@ type s3Content struct {
 	StorageClass string `xml:"StorageClass"`
 }
 
-func (f *fakeS3) list(w http.ResponseWriter, bucket, prefix string) {
+// list answers a ListObjectsV2 request the way S3 does: the keys that carry a
+// delimiter after the prefix are rolled up into CommonPrefixes, and only the
+// rest come back as contents. Getting this wrong in the fake hides every
+// defect that depends on the prefix matching real keys.
+func (f *fakeS3) list(w http.ResponseWriter, bucket, prefix, delimiter string) {
 	res := s3ListResult{Name: bucket, Prefix: prefix}
+	seen := map[string]bool{}
 	for k, v := range f.objects {
 		b, obj, _ := strings.Cut(k, "/")
 		if b != bucket || !strings.HasPrefix(obj, prefix) {
 			continue
+		}
+		if delimiter != "" {
+			if i := strings.Index(obj[len(prefix):], delimiter); i >= 0 {
+				p := obj[:len(prefix)+i+len(delimiter)]
+				if !seen[p] {
+					seen[p] = true
+					res.CommonPrefixes = append(res.CommonPrefixes, s3CommonPrefix{Prefix: p})
+				}
+				continue
+			}
 		}
 		res.Contents = append(res.Contents, s3Content{
 			Key:          obj,
@@ -304,6 +324,10 @@ func (f *fakeS3) list(w http.ResponseWriter, bucket, prefix string) {
 			StorageClass: "STANDARD",
 		})
 	}
+	sort.Slice(res.Contents, func(i, j int) bool { return res.Contents[i].Key < res.Contents[j].Key })
+	sort.Slice(res.CommonPrefixes, func(i, j int) bool {
+		return res.CommonPrefixes[i].Prefix < res.CommonPrefixes[j].Prefix
+	})
 	res.KeyCount = len(res.Contents)
 	w.Header().Set("Content-Type", "application/xml")
 	_ = xml.NewEncoder(w).Encode(res)
@@ -450,6 +474,48 @@ func TestMinioBackendImpl_ListObjectsStripsPathPrefix(t *testing.T) {
 	assert.Equal(t, map[string]int64{"one.txt": 1, "two.txt": 2}, keys)
 }
 
+// The scanner users of itx-master have their bucket prefix as their home
+// directory (/archive, /receipts, ...). Without a pathPrefix the backend used
+// to hand the leading slash of that home straight to MinIO as the list prefix,
+// and a list prefix is matched against the keys verbatim: no key starts with a
+// slash, so listing the home returned nothing and the user's own directory was
+// always empty.
+func TestMinioBackendImpl_ListObjectsWithHomeDirectory(t *testing.T) {
+	m, store := newFakeS3Backend(t, "document-scans", "")
+	store.objects["document-scans/archive/scan-1.jpg"] = []byte("1")
+	store.objects["document-scans/archive/archive/scan-2.jpg"] = []byte("22")
+	store.objects["document-scans/general/general/scan-3.jpg"] = []byte("333")
+
+	keysOf := func(objs []*ObjectInfo) []string {
+		var keys []string
+		for _, o := range objs {
+			keys = append(keys, o.Key)
+		}
+		return keys
+	}
+
+	// The home of the user is a directory: the trailing slash is part of the
+	// prefix, and without it MinIO answers with the single common prefix
+	// "archive/" and none of the objects in it.
+	objs, err := m.ListObjects("/archive", false)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"scan-1.jpg", "archive/"}, keysOf(objs))
+
+	objs, err = m.ListObjects("/archive", true)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"scan-1.jpg", "archive/scan-2.jpg"}, keysOf(objs))
+
+	// Listing the root of the bucket must return every key without a leading
+	// slash, because the storage layer resolves names against them.
+	objs, err = m.ListObjects("/", true)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{
+		"archive/scan-1.jpg",
+		"archive/archive/scan-2.jpg",
+		"general/general/scan-3.jpg",
+	}, keysOf(objs))
+}
+
 func TestMinioBackendImpl_GetFullPath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -461,7 +527,8 @@ func TestMinioBackendImpl_GetFullPath(t *testing.T) {
 		{"prefix without slash", "base", "a.txt", "base/a.txt"},
 		{"prefix with slash", "base/", "a.txt", "base/a.txt"},
 		{"leading slash on object", "base", "/a.txt", "base/a.txt"},
-		{"no prefix keeps leading slash", "", "/a.txt", "/a.txt"},
+		{"no prefix drops leading slash", "", "/a.txt", "a.txt"},
+		{"root", "", "/", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
