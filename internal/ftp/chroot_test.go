@@ -251,7 +251,7 @@ func TestKubeDriver_ValidateChrootPath(t *testing.T) {
 				user:              tt.user, // Set user directly for test
 			}
 
-			_, err := driver.validateChrootPath(tt.path)
+			_, err := chrootSession(driver).validateChrootPath(tt.path)
 
 			if tt.expectedErr {
 				assert.Error(t, err, tt.description)
@@ -356,12 +356,18 @@ func TestKubeDriver_ChrootFileOperations(t *testing.T) {
 }
 
 // Test that user initialization is required for chroot validation
+// chrootSession returns the session state of the driver, which holds the user
+// the chroot validation runs against.
+func chrootSession(driver *KubeDriver) *driverSession {
+	return &driverSession{user: driver.user, username: driver.authenticatedUser}
+}
+
 func TestKubeDriver_ChrootValidationRequiresUser(t *testing.T) {
 	driver := &KubeDriver{
 		user: nil, // No user initialized
 	}
 
-	_, err := driver.validateChrootPath("/any/path")
+	_, err := chrootSession(driver).validateChrootPath("/any/path")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "user not initialized")
 }
@@ -461,7 +467,7 @@ func TestScannerChrootScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := driver.validateChrootPath(tt.path)
+			_, err := chrootSession(driver).validateChrootPath(tt.path)
 
 			if tt.shouldAllow {
 				assert.NoError(t, err, tt.description)
