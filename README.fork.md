@@ -1,21 +1,23 @@
 # kubeftpd (fork)
 
 Fork of [rossigee/kubeftpd](https://github.com/rossigee/kubeftpd) at `v0.10.1`
-with five fixes that the itx-master deployment of the document scanner needs.
+with seven fixes that the itx-master deployment of the document scanner needs.
 
 The operator image of this fork is published as
-`zot.bankrut.lan/bankrut/kubeftpd:v0.10.4` and is deployed by
+`zot.bankrut.lan/bankrut/kubeftpd:v0.10.5` and is deployed by
 `rossgolderltd/flux-itx-master` (`50-applications/kubeftpd`).
 
 **Upstream status.** Upstream released `v0.10.2` on 2026-11-12 with Fix 1: its
 session isolation in `internal/ftp/server.go` and
 `internal/ftp/session_isolation_test.go` are this change, and its
 `CHANGELOG.md` describes it as the root cause of the cross-user access bugs.
-Fixes 2 to 5 are not upstream. They are queued as the branch
+Fixes 2 to 7 are not upstream. They are queued as the branch
 `fix/operator-defects`, rebuilt on top of upstream master and verified there
 (`gofmt`, `go build ./...`, `go vet`, the unit tests of `internal/ftp`,
 `internal/storage` and `internal/backends`), waiting for a GitHub pull request;
-until it lands this fork is the only image with them.
+until it lands this fork is the only image with them. Fixes 6 and 7 sit in code
+that is upstream's own - the `PutObject` call and the two `Close` stubs - while
+the registry that has to release them is ours.
 
 ## Fix 1 - the storage backend is resolved per FTP session
 
@@ -156,6 +158,54 @@ replaced by `no prefix drops leading slash` and `root`.
 `internal/backends/minio.go`, `internal/backends/minio_objects_test.go`,
 `internal/storage/minio.go`, `internal/storage/minio_test.go`
 
+## Fix 6 - a streaming upload allocated 537MiB per part
+
+`fix(minio): bound the part size of a streaming upload`
+
+An FTP transfer has no length until its last byte arrives, so
+`storage.minioStorage.PutFile` uploads with `size = -1` and
+`backends.minioBackendImpl.PutObject` passed no part size. minio-go plans an
+unknown-size upload for the largest object its layout allows, and says so
+itself in `api-put-object-common.go`:
+
+```
+// When object size is unknown (-1), default to 5TiB (or the maximum object
+// size, when lower) to limit memory usage. This results in ~537MiB part
+// sizes. For larger objects (up to the maximum object size), callers should
+// set configuredPartSize explicitly to control memory usage.
+```
+
+So one scanner page of 0.3MB allocated a 537MiB buffer of live heap. Measured on
+the deployed operator through its own metrics endpoint:
+
+| state | live heap (`go_memstats_heap_inuse_bytes`) |
+|---|---|
+| idle | 28 MB |
+| after a 1 MB upload | 556 MB |
+| after a 10 MB upload | 1085 MB |
+| idle afterwards, with `next_gc_bytes` | 584 MB, 1.15 GB |
+
+The container limit was 1Gi and the garbage collector does not start before
+`next_gc_bytes`, so the *second* upload of a burst crossed the cgroup limit and
+the pod was OOMKilled with exit 137 in the middle of the transfer - the client
+saw `EOF` on the `STOR` and `Connection refused` on the next login. Passing the
+library minimum, 16MiB, bounds one upload to that instead; 10000 parts, the
+maximum count, still reach a 156GB object, which no scanner produces.
+
+## Fix 7 - the storage of a finished session is released
+
+`fix(ftp): release the backend of a finished session`
+
+`minioStorage.Close` and `webdavStorage.Close` said the client "does not require
+explicit closing" and returned nil, while each backend owns an `http.Transport`
+that keeps its connection pool, TLS session cache and read buffers reachable
+until `CloseIdleConnections`. The session registry only pruned once it held
+`maxDriverSessions` entries, so a hundred sessions of the printer held a hundred
+transports. Each backend now closes its own transport, the storages call it
+through `io.Closer`, and pruning runs on the age of a session with the bound
+enforced by least recent use - `goftp.io/server/v2` never calls `Driver.Close`,
+so the registry is the only place that can.
+
 ## The routing test against the live backends
 
 `internal/ftp/live_routing_test.go` writes a file through a session of the
@@ -210,31 +260,31 @@ internal CA. `hack/minio_cleanup.py` imports the client of
 
 `.gitea/workflows/image.yml` publishes a tag of this repository to
 `zot.bankrut.lan/bankrut/kubeftpd`. Fork builds were published as `v0.10.2` and
-`v0.10.3` before upstream released its own, different `v0.10.2`; today the only
-`v0.10.x` tag of this repository is `v0.10.4`, so those two images in zot have no
-matching commit here. Do not reuse those numbers: a fork build of new content is
+`v0.10.3` before upstream released its own, different `v0.10.2`; those two tags
+are no longer in this repository, so the two images in zot have no matching
+commit here. Do not reuse those numbers: a fork build of new content is
 published under a fresh tag.
 
 The cluster's `ImagePolicy` resolves the highest semver tag of the zot
-repository. Upstream's next release is expected to be `v0.10.3` — a lower number
-than the deployed `v0.10.4`, although its content is newer — so **a fork release
-rebased on upstream is tagged `v0.10.5` or later**. That keeps the policy
-selecting a build that carries Fixes 2 to 5 whatever upstream numbers its
-releases.
+repository, so **every fork release is tagged above the newest upstream release**.
+`v0.10.4` carried the first five fixes, `v0.10.5` the upload-buffer and
+session-release fixes, and the next one is numbered above whatever upstream has
+published by then. Upstream's next release may well be `v0.10.3` - a lower number
+with newer content - and the policy must never be led by that.
 
 Adopting upstream's own image is a deliberate change, made in one PR: move the
 `ImageRepository` and the HelmRelease image to the upstream registry and raise
-the policy range to the upstream version that carries Fixes 2 to 5. Never adopt
+the policy range to the upstream version that carries Fixes 2 to 7. Never adopt
 an image because its tag happens to sort higher than the deployed one.
 
 ## Build
 
 ```bash
 docker build --network=host \
-  --build-arg VERSION=v0.10.4 \
+  --build-arg VERSION=v0.10.5 \
   --build-arg COMMIT="$(git rev-parse --short HEAD)" \
   --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.4 .
+  -t zot.bankrut.lan/bankrut/kubeftpd:v0.10.5 .
 ```
 
 The build needs the host network: the module download is very slow over the
