@@ -114,10 +114,10 @@ func TestMinioStorage_ListDirDeduplicatesSubdirectories(t *testing.T) {
 	b := &MockMinioBackend{}
 	s := minioTestStorage(ftpv1.UserPermissions{List: true}, b)
 	b.On("ListObjects", "/home/testuser/d", false).Return([]*backends.ObjectInfo{
-		{Key: "/home/testuser/d/a.txt", Size: 3},
-		{Key: "/home/testuser/d/sub/x.txt", Size: 1},
-		{Key: "/home/testuser/d/sub/y.txt", Size: 2},
-		{Key: "/home/testuser/d/", Size: 0},
+		{Key: "a.txt", Size: 3},
+		{Key: "sub/x.txt", Size: 1},
+		{Key: "sub/y.txt", Size: 2},
+		{Key: "", Size: 0},
 	}, nil).Once()
 
 	var names []string
