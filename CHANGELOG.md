@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.2] - 2026-11-12
+
+### Fixed
+- **FTP server**: session isolation added to `internal/ftp/server.go` so each connection gets its own isolated `session` stored in the goftp.io/server/v2 `Context`. Prevents user backend confusion across concurrent connections (root cause of cross-user access bugs). Includes `session_isolation_test.go` and updates to `chroot_test.go`/`driver_test.go`
+- **Lint**: fixed SA4006 in `internal/ftp/server.go:502` by using the request `ctx` instead of `context.Background()`
+
+### Changed
+- **Dependencies**: all modules updated via `go get -u ./...` and vendored
+
+### Security
+- **Go**: upgraded from 1.27.3 to 1.27.4 in `go.mod`, `Dockerfile`, `Dockerfile.dev`, `docker-compose.dev.yml`, `.devcontainer/devcontainer.json`, `.github/workflows/ci.yml` and `release.yml` to fix GO-2026-6859 (net/http vulnerability)
+- **CI**: `govulncheck` is now a blocking check in the Security Scan job
+
 ## [v0.10.1] - 2026-11-08
 
 ### Fixed
