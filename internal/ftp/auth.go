@@ -325,7 +325,13 @@ func (auth *KubeAuth) getSessionID(ctx *server.Context) string {
 
 	// remoteAddr.String() already includes both IP and port (e.g., "192.168.1.100:54321")
 	// This ensures each connection gets a unique session ID even from the same client IP
-	return fmt.Sprintf("ftp-session-%s", remoteAddr.String())
+	return sessionIDForAddr(remoteAddr.String())
+}
+
+// sessionIDForAddr returns the session ID of the connection from the given
+// remote address. It is the key of the session-user map.
+func sessionIDForAddr(remoteAddr string) string {
+	return fmt.Sprintf("ftp-session-%s", remoteAddr)
 }
 
 // setSessionUser safely sets the authenticated user for a session

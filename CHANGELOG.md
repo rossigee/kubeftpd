@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Session init timeout**: `FTP_SESSION_INIT_TIMEOUT` (seconds, default `30`) bounds the user lookup and backend setup of a session. The Helm chart exposes it as `ftp.settings.sessionInitTimeout`
 
+### Fixed
+- **Session lifecycle**: goftp never calls `KubeDriver.Init` or `Close`, so per-session context and cleanup did not run. Each accepted connection now gets a context that is cancelled when the connection closes, and a session's user lookup and backend setup run under it. Closing a connection also forgets its session user
+- **Connection metrics**: `kubeftpd_connections_total`, `kubeftpd_active_connections` and `kubeftpd_connection_duration_seconds` are recorded when a connection opens and closes
+
 ## [v0.10.4] - 2026-11-13
 
 ### Fixed
