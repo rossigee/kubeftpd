@@ -1,3 +1,4 @@
+---
 apiVersion: ftp.golder.org/v1
 kind: FilesystemBackend
 metadata:
@@ -39,7 +40,7 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  # storageClassName: fast-ssd  # specify storage class if needed
+# storageClassName: fast-ssd  # specify storage class if needed
 ---
 apiVersion: ftp.golder.org/v1
 kind: User
