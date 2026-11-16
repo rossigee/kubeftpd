@@ -2,6 +2,7 @@ package ftp
 
 import (
 	"bufio"
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -114,4 +115,31 @@ func TestLimitedConn_ReleasesOnce(t *testing.T) {
 	_ = c.Close()
 	_ = c.Close()
 	assert.Equal(t, 1, releases)
+}
+
+// A connection accepted through the listener has a context while it is open,
+// and the context is cancelled when the connection is closed.
+func TestLimitedListener_TracksConnectionContext(t *testing.T) {
+	base, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	conns := newConnContexts()
+	l := &limitedListener{Listener: base, conns: conns}
+	defer func() { _ = l.Close() }()
+
+	accepted := acceptLoop(t, l)
+	client, err := net.Dial("tcp", base.Addr().String())
+	require.NoError(t, err)
+	defer func() { _ = client.Close() }()
+
+	serverConn := <-accepted
+	addr := serverConn.RemoteAddr().String()
+
+	connCtx, ok := conns.lookup(addr)
+	require.True(t, ok, "an open connection has a context")
+	assert.NoError(t, connCtx.Err())
+
+	require.NoError(t, serverConn.Close())
+	assert.ErrorIs(t, connCtx.Err(), context.Canceled, "closing the connection cancels its context")
+	_, ok = conns.lookup(addr)
+	assert.False(t, ok, "a closed connection is no longer tracked")
 }
