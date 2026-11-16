@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.9] - 2026-11-17
+
+### Security
+- **Go toolchain**: bumped to Go 1.27.4, which fixes GO-2026-6859 (HTTP/1 server crash from a `MaxBytesReader` header race in `net/http`). `govulncheck` reported it as reachable from the binary
+
+### Changed
+- **Dependencies**: all Go modules updated to their latest versions, including `controller-runtime` v0.25.3 and `ginkgo` v2.34.0
+- **Build**: Go 1.27.4 is used in `go.mod`, `Dockerfile`, `Dockerfile.dev`, the devcontainer, docker-compose and the CI and release workflows
+- **Tooling**: `controller-tools` pinned to v0.23.0 and `kustomize` to v5.8.3. The regenerated CRDs differ only in the `controller-gen` version annotation
+
+### Added
+- **Session init timeout**: `FTP_SESSION_INIT_TIMEOUT` (seconds, default `30`) bounds the user lookup and backend setup of a session. The Helm chart exposes it as `ftp.settings.sessionInitTimeout`
+
+### Fixed
+- **FTP driver**: session init now runs under the session context, so closing the session cancels an in-progress user lookup or backend setup
+
 ## [v0.10.1] - 2026-11-08
 
 ### Fixed

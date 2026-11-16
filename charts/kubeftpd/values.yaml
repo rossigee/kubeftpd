@@ -140,6 +140,8 @@ ftp:
     welcomeMessage: "Welcome to KubeFTPd"
     idleTimeout: 300
     maxConnections: 100
+    # Seconds allowed for a session's user lookup and backend setup
+    sessionInitTimeout: 30
 
 # Storage backends configuration
 backends:

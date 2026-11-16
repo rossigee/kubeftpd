@@ -23,6 +23,16 @@ func TestProcessEnvironmentOverrides_ConnectionLimits(t *testing.T) {
 	t.Setenv("FTP_MAX_CONNECTIONS", "0")
 	processEnvironmentOverrides(config)
 	assert.Zero(t, config.ftpMaxConnections, "0 is an explicit no-limit")
+
+	// Unset leaves the zero value, which the ftp package resolves to its default.
+	config = &appConfig{}
+	t.Setenv("FTP_SESSION_INIT_TIMEOUT", "")
+	processEnvironmentOverrides(config)
+	assert.Zero(t, config.ftpSessionInitTimeout)
+
+	t.Setenv("FTP_SESSION_INIT_TIMEOUT", "45")
+	processEnvironmentOverrides(config)
+	assert.Equal(t, 45*time.Second, config.ftpSessionInitTimeout)
 }
 
 func TestLogEncoderFor(t *testing.T) {

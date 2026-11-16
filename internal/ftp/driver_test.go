@@ -1271,3 +1271,16 @@ func TestKubeDriver_Operations_StorageErrorsWithTracing(t *testing.T) {
 		ms.AssertNotCalled(t, "PutFile", mock.Anything, mock.Anything, mock.Anything)
 	})
 }
+
+func TestSessionInitTimeout(t *testing.T) {
+	t.Run("zero uses the default", func(t *testing.T) {
+		driver := &KubeDriver{}
+		assert.Equal(t, 30*time.Second, DefaultSessionInitTimeout)
+		assert.Equal(t, DefaultSessionInitTimeout, driver.sessionInitTimeout())
+	})
+
+	t.Run("configured value is used", func(t *testing.T) {
+		driver := &KubeDriver{initTimeout: 5 * time.Second}
+		assert.Equal(t, 5*time.Second, driver.sessionInitTimeout())
+	})
+}
