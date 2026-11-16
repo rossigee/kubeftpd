@@ -17,6 +17,7 @@ KubeFTPd is configured with environment variables and command-line flags. The He
 | `LOG_FORMAT` | Log output: `json` or `text` | `json` |
 | `FTP_IDLE_TIMEOUT` | Close a control connection that sends nothing for this many seconds (`0` disables) | `0` |
 | `FTP_MAX_CONNECTIONS` | Maximum concurrent control connections; further clients get a `421` reply (`0` means no limit) | `0` |
+| `FTP_SESSION_INIT_TIMEOUT` | Seconds allowed for a session's user lookup and backend setup (must be positive) | `30` |
 | `HTTP_BIND_ADDRESS` | Address for metrics, health and status (`host:port`) | `:8080` |
 | `ENABLE_PROFILING` | Enable Go profiling endpoints | `false` |
 

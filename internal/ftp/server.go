@@ -92,8 +92,11 @@ type Server struct {
 	// MaxConnections caps concurrent control connections; further clients get a
 	// 421 reply. Zero means no cap.
 	MaxConnections int
-	client         client.Client
-	server         *server.Server
+	// SessionInitTimeout bounds the user lookup and backend setup of a session.
+	// Zero means DefaultSessionInitTimeout.
+	SessionInitTimeout time.Duration
+	client             client.Client
+	server             *server.Server
 }
 
 // NewServer creates a new FTP server instance
@@ -140,8 +143,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create FTP server configuration
 	driver := &KubeDriver{
-		client: s.client,
-		auth:   auth,
+		client:      s.client,
+		auth:        auth,
+		initTimeout: s.SessionInitTimeout,
 	}
 
 	opts := &server.Options{
@@ -305,6 +309,19 @@ type KubeDriver struct {
 	sessionID         string             // Track session ID for cleanup
 	sessionCtx        context.Context    // Per-session context; cancelled in Close
 	sessionCancel     context.CancelFunc // Cancels sessionCtx on connection close
+	initTimeout       time.Duration      // Bounds session init; zero means DefaultSessionInitTimeout
+}
+
+// DefaultSessionInitTimeout bounds the user lookup and backend setup of a session
+// when Server.SessionInitTimeout is not set.
+const DefaultSessionInitTimeout = 30 * time.Second
+
+// sessionInitTimeout returns the timeout for session init.
+func (driver *KubeDriver) sessionInitTimeout() time.Duration {
+	if driver.initTimeout > 0 {
+		return driver.initTimeout
+	}
+	return DefaultSessionInitTimeout
 }
 
 // driverSession is the state of a single FTP session: the authenticated user
@@ -393,7 +410,7 @@ func (driver *KubeDriver) sessionFor(key, username, clientIP string) (*driverSes
 		return nil, fmt.Errorf("user %s not authenticated", username)
 	}
 
-	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	initCtx, initCancel := context.WithTimeout(context.Background(), driver.sessionInitTimeout())
 	defer initCancel()
 
 	user := driver.auth.GetUser(initCtx, username)
@@ -498,7 +515,7 @@ func (driver *KubeDriver) initFallbackSession() error {
 		ctx = context.Background()
 	}
 
-	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	initCtx, initCancel := context.WithTimeout(ctx, driver.sessionInitTimeout())
 	defer initCancel()
 
 	user := driver.auth.GetUser(initCtx, username)

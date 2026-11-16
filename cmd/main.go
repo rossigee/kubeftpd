@@ -55,7 +55,7 @@ import (
 
 var (
 	// Version information - set during build
-	version = "v0.10.1"
+	version = "v0.10.9"
 	commit  = "unknown"
 	date    = "unknown"
 
@@ -84,13 +84,16 @@ type appConfig struct {
 	ftpPort           int
 	ftpIdleTimeout    time.Duration
 	ftpMaxConnections int
-	ftpPasvPorts      string
-	ftpPublicIP       string
-	ftpWelcomeMessage string
-	ftpTLSCertPath    string
-	ftpTLSCertName    string
-	ftpTLSCertKey     string
-	ftpForceTLS       bool
+	// ftpSessionInitTimeout is zero unless FTP_SESSION_INIT_TIMEOUT is set;
+	// zero means ftp.DefaultSessionInitTimeout.
+	ftpSessionInitTimeout time.Duration
+	ftpPasvPorts          string
+	ftpPublicIP           string
+	ftpWelcomeMessage     string
+	ftpTLSCertPath        string
+	ftpTLSCertName        string
+	ftpTLSCertKey         string
+	ftpForceTLS           bool
 	// Built-in anonymous user settings
 	enableAnonymous      bool
 	anonymousHomeDir     string
@@ -193,9 +196,19 @@ func logEncoderFor(format string) (zapcore.Encoder, error) {
 	}
 }
 
-// applyFTPConnectionEnvOverrides reads FTP_IDLE_TIMEOUT (seconds) and
-// FTP_MAX_CONNECTIONS. Zero disables each; invalid values stop startup.
+// applyFTPConnectionEnvOverrides reads FTP_IDLE_TIMEOUT (seconds),
+// FTP_MAX_CONNECTIONS and FTP_SESSION_INIT_TIMEOUT (seconds, must be positive).
+// Zero disables the first two; invalid values stop startup.
 func applyFTPConnectionEnvOverrides(config *appConfig) {
+	if envInit := os.Getenv("FTP_SESSION_INIT_TIMEOUT"); envInit != "" {
+		seconds, err := strconv.Atoi(envInit)
+		if err != nil || seconds <= 0 {
+			setupLog.Error(err, "invalid FTP_SESSION_INIT_TIMEOUT environment variable (positive seconds)", "value", envInit)
+			os.Exit(1)
+		}
+		config.ftpSessionInitTimeout = time.Duration(seconds) * time.Second
+	}
+
 	if envIdle := os.Getenv("FTP_IDLE_TIMEOUT"); envIdle != "" {
 		seconds, err := strconv.Atoi(envIdle)
 		if err != nil || seconds < 0 {
@@ -444,6 +457,7 @@ func buildFTPServer(config *appConfig, kubeClient client.Client) *ftp.Server {
 	s := ftp.NewServer(config.ftpBindAddress, config.ftpPort, config.ftpPasvPorts, config.ftpPublicIP, config.ftpWelcomeMessage, kubeClient)
 	s.IdleTimeout = config.ftpIdleTimeout
 	s.MaxConnections = config.ftpMaxConnections
+	s.SessionInitTimeout = config.ftpSessionInitTimeout
 	if config.ftpTLSCertPath != "" {
 		s.TLSCertFile = filepath.Join(config.ftpTLSCertPath, config.ftpTLSCertName)
 		s.TLSKeyFile = filepath.Join(config.ftpTLSCertPath, config.ftpTLSCertKey)

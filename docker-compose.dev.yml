@@ -10,7 +10,7 @@ services:
       context: .
       dockerfile: Dockerfile.dev
       args:
-        GO_VERSION: "1.27.3"
+        GO_VERSION: "1.27.4"
     volumes:
       # Mount source code for live development
       - .:/workspace

@@ -2,7 +2,7 @@
 IMG ?= controller:latest
 
 # Version information
-VERSION ?= v0.10.1
+VERSION ?= v0.10.9
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.date=$(DATE)'
@@ -303,8 +303,8 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GOSEC = $(LOCALBIN)/gosec
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.6.0
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
+KUSTOMIZE_VERSION ?= v5.8.3
+CONTROLLER_TOOLS_VERSION ?= v0.23.0
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
