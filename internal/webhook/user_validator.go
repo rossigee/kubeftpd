@@ -93,8 +93,23 @@ func (v *UserValidator) validatePasswordStrength(password string) error {
 	}
 
 	// Complexity requirements
-	var hasUpper, hasLower, hasDigit, hasSpecial bool
+	if missing := missingComplexity(password); len(missing) > 0 {
+		return fmt.Errorf("password must contain at least one: %s", strings.Join(missing, ", "))
+	}
 
+	if sequentialPattern.MatchString(strings.ToLower(password)) {
+		return fmt.Errorf("password cannot contain sequential characters")
+	}
+
+	return nil
+}
+
+// sequentialPattern matches runs of three consecutive digits or letters.
+var sequentialPattern = regexp.MustCompile(`(012|123|234|345|456|567|678|789|890|abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz)`)
+
+// missingComplexity returns the character classes the password does not contain.
+func missingComplexity(password string) []string {
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
 	for _, char := range password {
 		switch {
 		case char >= 'A' && char <= 'Z':
@@ -121,18 +136,7 @@ func (v *UserValidator) validatePasswordStrength(password string) error {
 	if !hasSpecial {
 		missing = append(missing, "special character")
 	}
-
-	if len(missing) > 0 {
-		return fmt.Errorf("password must contain at least one: %s", strings.Join(missing, ", "))
-	}
-
-	// Check for sequential characters
-	sequential := regexp.MustCompile(`(012|123|234|345|456|567|678|789|890|abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz)`)
-	if sequential.MatchString(strings.ToLower(password)) {
-		return fmt.Errorf("password cannot contain sequential characters")
-	}
-
-	return nil
+	return missing
 }
 
 // validateSecretReference checks if secret exists and is accessible

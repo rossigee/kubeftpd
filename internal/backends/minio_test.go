@@ -300,6 +300,9 @@ func TestMinioBackendNamespaceFix_IntegrationStyle(t *testing.T) {
 // Additional tests for MinIO backend functions to improve coverage
 
 func TestNewMinioBackend_DirectCredentials(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits for the MinIO client to give up connecting; runs in the full suite")
+	}
 	// Test creating MinIO backend with direct credentials (not secret)
 	backend := &ftpv1.MinioBackend{
 		ObjectMeta: metav1.ObjectMeta{
@@ -307,7 +310,7 @@ func TestNewMinioBackend_DirectCredentials(t *testing.T) {
 			Namespace: "test-namespace",
 		},
 		Spec: ftpv1.MinioBackendSpec{
-			Endpoint: "http://localhost:9000",
+			Endpoint: "http://127.0.0.1:1",
 			Bucket:   "test-bucket",
 			Region:   "us-east-1",
 			Credentials: ftpv1.MinioCredentials{
@@ -334,6 +337,9 @@ func TestNewMinioBackend_DirectCredentials(t *testing.T) {
 }
 
 func TestNewMinioBackend_SecretCredentials(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits for the MinIO client to give up connecting; runs in the full suite")
+	}
 	// Test creating MinIO backend with credentials from secret
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -361,7 +367,7 @@ func TestNewMinioBackend_SecretCredentials(t *testing.T) {
 			Namespace: "test-namespace",
 		},
 		Spec: ftpv1.MinioBackendSpec{
-			Endpoint: "https://localhost:9000",
+			Endpoint: "https://127.0.0.1:1",
 			Bucket:   "test-bucket",
 			Region:   "us-east-1",
 			Credentials: ftpv1.MinioCredentials{
@@ -381,6 +387,9 @@ func TestNewMinioBackend_SecretCredentials(t *testing.T) {
 }
 
 func TestNewMinioBackend_HTTPSEndpoint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits for the MinIO client to give up connecting; runs in the full suite")
+	}
 	// Test HTTPS endpoint parsing and TLS configuration
 	backend := &ftpv1.MinioBackend{
 		ObjectMeta: metav1.ObjectMeta{
@@ -388,15 +397,12 @@ func TestNewMinioBackend_HTTPSEndpoint(t *testing.T) {
 			Namespace: "test-namespace",
 		},
 		Spec: ftpv1.MinioBackendSpec{
-			Endpoint: "https://minio.example.com:9000",
+			Endpoint: "https://127.0.0.1:1",
 			Bucket:   "test-bucket",
 			Region:   "us-west-2",
 			Credentials: ftpv1.MinioCredentials{
 				AccessKeyID:     "test-access-key",
 				SecretAccessKey: "test-secret-key",
-			},
-			TLS: &ftpv1.MinioTLSConfig{
-				InsecureSkipVerify: true,
 			},
 		},
 	}
@@ -421,7 +427,7 @@ func TestNewMinioBackend_InvalidCredentials(t *testing.T) {
 			Namespace: "test-namespace",
 		},
 		Spec: ftpv1.MinioBackendSpec{
-			Endpoint: "http://localhost:9000",
+			Endpoint: "http://127.0.0.1:1",
 			Bucket:   "test-bucket",
 			Credentials: ftpv1.MinioCredentials{
 				UseSecret: &ftpv1.MinioSecretRef{
@@ -491,7 +497,7 @@ func TestMinioBackend_PathPrefixHandling(t *testing.T) {
 			Namespace: "test-namespace",
 		},
 		Spec: ftpv1.MinioBackendSpec{
-			Endpoint:   "http://localhost:9000",
+			Endpoint:   "http://127.0.0.1:1",
 			Bucket:     "test-bucket",
 			PathPrefix: "user-data/",
 			Credentials: ftpv1.MinioCredentials{

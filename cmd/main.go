@@ -111,9 +111,13 @@ type appConfig struct {
 }
 
 func getDefaultFTPPort() int {
-	// Check if running as root (UID 0) - can bind to port 21
-	// Otherwise default to port 2121 for unprivileged users
-	if os.Getuid() == 0 {
+	return defaultFTPPortForUID(os.Getuid())
+}
+
+// defaultFTPPortForUID returns port 21 for root (UID 0), which can bind to
+// privileged ports, and port 2121 for any other UID.
+func defaultFTPPortForUID(uid int) int {
+	if uid == 0 {
 		return 21
 	}
 	return 2121
