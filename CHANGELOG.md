@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Session init timeout**: `FTP_SESSION_INIT_TIMEOUT` (seconds, default `30`) bounds the user lookup and backend setup of a session. The Helm chart exposes it as `ftp.settings.sessionInitTimeout`
+
 ## [v0.10.4] - 2026-11-13
 
 ### Fixed

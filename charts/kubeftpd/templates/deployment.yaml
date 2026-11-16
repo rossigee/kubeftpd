@@ -53,6 +53,8 @@ spec:
           value: {{ .Values.ftp.settings.idleTimeout | quote }}
         - name: FTP_MAX_CONNECTIONS
           value: {{ .Values.ftp.settings.maxConnections | quote }}
+        - name: FTP_SESSION_INIT_TIMEOUT
+          value: {{ .Values.ftp.settings.sessionInitTimeout | quote }}
         - name: POD_NAMESPACE
           value: {{ .Release.Namespace }}
         - name: LOG_LEVEL
