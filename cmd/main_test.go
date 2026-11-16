@@ -37,30 +37,9 @@ func TestGetDefaultFTPPort(t *testing.T) {
 		},
 	}
 
-	// Save original UID function and restore after test
-	originalGetuid := os.Getuid
-	defer func() {
-		// We can't actually restore os.Getuid as it's not assignable
-		// This test demonstrates the expected behavior based on current UID
-		_ = originalGetuid
-	}()
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Note: We can't mock os.Getuid() directly as it's a system call
-			// This test documents the expected behavior
-			// In a real scenario, we would need to refactor the code to make UID injectable
-			currentUID := os.Getuid()
-			expectedPort := getDefaultFTPPort()
-
-			if currentUID == 0 && expectedPort != 21 {
-				t.Errorf("Expected port 21 for root user, got %d", expectedPort)
-			} else if currentUID != 0 && expectedPort != 2121 {
-				t.Errorf("Expected port 2121 for non-root user (UID %d), got %d", currentUID, expectedPort)
-			}
-
-			t.Logf("Test case: %s - UID: %d, Expected: %d, Got: %d",
-				tt.description, currentUID, tt.expectedPort, expectedPort)
+			assert.Equal(t, tt.expectedPort, defaultFTPPortForUID(tt.uid), tt.description)
 		})
 	}
 }
