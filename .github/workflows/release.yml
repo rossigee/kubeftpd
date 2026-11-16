@@ -1,7 +1,7 @@
 ---
 name: Release
 
-on:
+"on":
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+' # Trigger on tags with semantic versioning
@@ -97,7 +97,8 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          awk -v v="## [$VERSION]" 'index($0, v) == 1 {found=1; next} /^## \[/ {found=0} found' CHANGELOG.md > RELEASE_NOTES.md
+          awk -v v="## [$VERSION]" \
+            'index($0, v) == 1 {found=1; next} /^## \[/ {found=0} found' CHANGELOG.md > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
             echo "::error::CHANGELOG.md has no section for $VERSION"
             exit 1
@@ -137,7 +138,8 @@ jobs:
         run: |
           helm package charts/kubeftpd -d dist
           printf '%s' "$PAT_TOKEN" | helm registry login "$REGISTRY" -u "$ACTOR" --password-stdin
-          helm push dist/kubeftpd-*.tgz "oci://$REGISTRY/$(printf '%s' "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')/charts"
+          helm push dist/kubeftpd-*.tgz \
+            "oci://$REGISTRY/$(printf '%s' "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')/charts"
           helm registry logout "$REGISTRY"
 
       - name: Create GitHub release
