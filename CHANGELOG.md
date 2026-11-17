@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.11] - 2026-11-17
+
 ### Fixed
 - **Metrics are served**: the `kubeftpd_*` metrics were registered on the default Prometheus registry, which the manager does not serve at `/metrics`, so none of them could be scraped. They are now registered on the registry that `/metrics` serves. This includes the connection metrics listed under v0.10.10, which were recorded but never exposed, and the alerts in `config/monitoring` that use them
 
