@@ -72,8 +72,6 @@ spec:
   credentials:
     accessKeyID: "minioadmin"
     secretAccessKey: "minioadmin123"
-  tls:
-    insecureSkipVerify: true
 EOF
 
 cat > examples/test-user.yaml << EOF
