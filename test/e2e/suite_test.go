@@ -117,9 +117,6 @@ func TestMinioIntegration(t *testing.T) {
 						AccessKeyID:     minioAccessKey,
 						SecretAccessKey: minioSecretKey,
 					},
-					TLS: &ftpv1.MinioTLSConfig{
-						InsecureSkipVerify: true,
-					},
 				},
 			}
 

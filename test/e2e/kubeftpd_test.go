@@ -44,9 +44,6 @@ var _ = Describe("KubeFTPd E2E Tests", func() {
 					AccessKeyID:     "minioadmin",
 					SecretAccessKey: "minioadmin123",
 				},
-				TLS: &ftpv1.MinioTLSConfig{
-					InsecureSkipVerify: true,
-				},
 			},
 		}
 
