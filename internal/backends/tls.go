@@ -25,7 +25,7 @@ func buildTLSConfig(
 	kubeClient client.Client,
 ) (*tls.Config, error) {
 	cfg := &tls.Config{
-		InsecureSkipVerify: insecureSkipVerify, // nolint:gosec
+		InsecureSkipVerify: insecureSkipVerify, // #nosec G402 -- user-selected per backend (spec.tls.insecureSkipVerify), off by default
 	}
 
 	var pemBundle []byte
