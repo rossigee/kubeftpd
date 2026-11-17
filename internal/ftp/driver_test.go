@@ -844,21 +844,41 @@ func TestKubeDriver_CloseClearsSessionUser(t *testing.T) {
 	assert.Empty(t, auth.GetSessionUser("ftp-session-192.0.2.1:50000"))
 }
 
-// Close on a driver that never finished Init must not panic.
-func TestKubeDriver_CloseWithoutInit(t *testing.T) {
+// Close on a driver that has no session state must not panic.
+func TestKubeDriver_CloseWithoutSession(t *testing.T) {
 	driver := &KubeDriver{}
 	assert.NotPanics(t, func() {
 		assert.NoError(t, driver.Close())
 	})
 }
 
-// Close cancels the per-session context so in-flight work stops.
-func TestKubeDriver_CloseCancelsSessionContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	driver := &KubeDriver{sessionCtx: ctx, sessionCancel: cancel}
+// A live connection has a context, which is cancelled when the connection is
+// removed and which forgets the session user of that connection.
+func TestConnContexts_RemoveCancelsAndForgetsUser(t *testing.T) {
+	auth := &KubeAuth{}
+	const addr = "192.0.2.1:50000"
+	auth.setSessionUser(sessionIDForAddr(addr), "alice")
 
-	assert.NoError(t, driver.Close())
-	assert.ErrorIs(t, ctx.Err(), context.Canceled)
+	conns := newConnContexts()
+	conns.onRemove = func(a string, _ time.Duration) { auth.ClearSessionUser(sessionIDForAddr(a)) }
+	conns.add(addr)
+
+	connCtx, ok := conns.lookup(addr)
+	require.True(t, ok)
+	assert.NoError(t, connCtx.Err())
+
+	conns.remove(addr)
+	assert.ErrorIs(t, connCtx.Err(), context.Canceled)
+	_, ok = conns.lookup(addr)
+	assert.False(t, ok)
+	assert.Empty(t, auth.GetSessionUser(sessionIDForAddr(addr)))
+}
+
+// Without a connection registry, the session context is background, so the
+// unit tests that have no connection keep working.
+func TestKubeDriver_ConnContextWithoutRegistry(t *testing.T) {
+	driver := &KubeDriver{}
+	assert.Equal(t, context.Background(), driver.connContext(nil))
 }
 
 // newOpsTestDriver returns a driver whose user is already initialised, so the
@@ -1094,13 +1114,13 @@ func newInitTestAuth(t *testing.T, objs ...client.Object) *KubeAuth {
 
 func TestKubeDriver_EnsureUserInitialized(t *testing.T) {
 	t.Run("no authenticated user", func(t *testing.T) {
-		d := &KubeDriver{auth: newInitTestAuth(t), sessionCtx: context.Background()}
+		d := &KubeDriver{auth: newInitTestAuth(t)}
 		err := d.ensureUserInitialized()
 		assert.ErrorContains(t, err, "user not authenticated")
 	})
 
 	t.Run("authenticated user missing from the auth cache", func(t *testing.T) {
-		d := &KubeDriver{auth: newInitTestAuth(t), authenticatedUser: "ghost", sessionCtx: context.Background()}
+		d := &KubeDriver{auth: newInitTestAuth(t), authenticatedUser: "ghost"}
 		err := d.ensureUserInitialized()
 		assert.ErrorContains(t, err, "user ghost not found in auth cache")
 	})
@@ -1116,7 +1136,7 @@ func TestKubeDriver_EnsureUserInitialized(t *testing.T) {
 		}
 		auth := newInitTestAuth(t)
 		auth.userCache.Store("carol", u)
-		d := &KubeDriver{client: auth.client, auth: auth, authenticatedUser: "carol", sessionCtx: context.Background()}
+		d := &KubeDriver{client: auth.client, auth: auth, authenticatedUser: "carol"}
 
 		err := d.ensureUserInitialized()
 		assert.ErrorContains(t, err, "failed to initialize storage for user carol")
@@ -1140,7 +1160,7 @@ func TestKubeDriver_EnsureUserInitialized(t *testing.T) {
 		}
 		auth := newInitTestAuth(t, backend)
 		auth.userCache.Store("dave", u)
-		d := &KubeDriver{client: auth.client, auth: auth, authenticatedUser: "dave", sessionCtx: context.Background()}
+		d := &KubeDriver{client: auth.client, auth: auth, authenticatedUser: "dave"}
 
 		require.NoError(t, d.ensureUserInitialized())
 		assert.NotNil(t, d.storageImpl)
@@ -1177,7 +1197,7 @@ func TestKubeDriverFactory_NewDriverCarriesDependencies(t *testing.T) {
 // enabled, so the span branches are exercised too.
 func TestKubeDriver_Operations_RefuseWithoutInitialisedUser(t *testing.T) {
 	run := func(t *testing.T) {
-		d := &KubeDriver{auth: newInitTestAuth(t), authenticatedUser: "ghost", sessionCtx: context.Background()}
+		d := &KubeDriver{auth: newInitTestAuth(t), authenticatedUser: "ghost"}
 		ctx := (*server.Context)(nil)
 		noop := func(os.FileInfo) error { return nil }
 

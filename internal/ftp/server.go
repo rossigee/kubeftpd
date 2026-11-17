@@ -141,10 +141,26 @@ func (s *Server) Start(ctx context.Context) error {
 		auth.StartCacheRefresh(ctx, 5*time.Minute)
 	}()
 
+	// The contexts of the live connections. A connection's context is cancelled,
+	// and its session user forgotten, when the connection closes.
+	conns := newConnContexts()
+	conns.onAdd = func(addr string) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			host = addr
+		}
+		metrics.RecordConnection(host)
+	}
+	conns.onRemove = func(addr string, open time.Duration) {
+		auth.ClearSessionUser(sessionIDForAddr(addr))
+		metrics.RecordConnectionClosed(open)
+	}
+
 	// Create FTP server configuration
 	driver := &KubeDriver{
 		client:      s.client,
 		auth:        auth,
+		conns:       conns,
 		initTimeout: s.SessionInitTimeout,
 	}
 
@@ -195,16 +211,15 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create listener on %s: %w", bindAddr, err)
 	}
-	if s.MaxConnections > 0 || s.IdleTimeout > 0 {
-		listener = &limitedListener{
-			Listener: listener,
-			max:      s.MaxConnections,
-			idle:     s.IdleTimeout,
-			onRefuse: func(remote net.Addr) {
-				getLogger().Info("Rejected FTP connection: connection limit reached",
-					"remote", remote.String(), "max_connections", s.MaxConnections)
-			},
-		}
+	listener = &limitedListener{
+		Listener: listener,
+		max:      s.MaxConnections,
+		idle:     s.IdleTimeout,
+		conns:    conns,
+		onRefuse: func(remote net.Addr) {
+			getLogger().Info("Rejected FTP connection: connection limit reached",
+				"remote", remote.String(), "max_connections", s.MaxConnections)
+		},
 	}
 	defer func() {
 		_ = listener.Close()
@@ -303,13 +318,13 @@ type KubeDriver struct {
 	// goftp Perm interface and for the driver unit tests.
 	user              *ftpv1.User
 	storageImpl       storage.Storage
-	authenticatedUser string             // Track the authenticated username
-	sessionStart      time.Time          // Track session start time
-	clientIP          string             // Track client IP
-	sessionID         string             // Track session ID for cleanup
-	sessionCtx        context.Context    // Per-session context; cancelled in Close
-	sessionCancel     context.CancelFunc // Cancels sessionCtx on connection close
-	initTimeout       time.Duration      // Bounds session init; zero means DefaultSessionInitTimeout
+	authenticatedUser string        // Track the authenticated username
+	sessionStart      time.Time     // Track session start time
+	clientIP          string        // Track client IP
+	sessionID         string        // Track session ID for cleanup
+	initTimeout       time.Duration // Bounds session init; zero means DefaultSessionInitTimeout
+	// conns gives the context of each live connection; see connContexts.
+	conns *connContexts
 }
 
 // DefaultSessionInitTimeout bounds the user lookup and backend setup of a session
@@ -346,26 +361,6 @@ const maxDriverSessions = 256
 // longer than that is gone.
 const driverSessionTTL = 30 * time.Minute
 
-func (driver *KubeDriver) Init(conn *server.Context) {
-	logger := getLogger()
-	logger.Info("Initializing FTP driver for connection")
-
-	driver.sessionCtx, driver.sessionCancel = context.WithCancel(context.Background())
-
-	// Store session ID for authenticated user lookup
-	driver.sessionID = driver.auth.getSessionID(conn)
-	driver.sessionStart = time.Now()
-
-	driver.clientIP = driver.auth.clientIPFromCtx(conn)
-
-	// Record connection metrics
-	username := driver.getAuthenticatedUsername(nil)
-	if username != "" {
-		logger.Info("Recording connection metrics", "username", username, "client_ip", driver.clientIP)
-		metrics.RecordConnection(driver.clientIP)
-	}
-}
-
 // sessionIdentity returns the identity of the FTP session that owns ctx and
 // the username that session authenticated as.
 //
@@ -392,6 +387,12 @@ func (driver *KubeDriver) sessionIdentity(ctx *server.Context) (string, string) 
 // backend of the user that session authenticated as, so two sessions of
 // different users never share a backend.
 func (driver *KubeDriver) sessionFor(key, username, clientIP string) (*driverSession, error) {
+	return driver.sessionForFrom(context.Background(), key, username, clientIP)
+}
+
+// sessionForFrom is sessionFor with the user lookup and backend setup bounded
+// by parent as well as by the session init timeout.
+func (driver *KubeDriver) sessionForFrom(parent context.Context, key, username, clientIP string) (*driverSession, error) {
 	driver.sessionsMu.Lock()
 	defer driver.sessionsMu.Unlock()
 
@@ -416,7 +417,7 @@ func (driver *KubeDriver) sessionFor(key, username, clientIP string) (*driverSes
 		return nil, fmt.Errorf("user %s not authenticated", username)
 	}
 
-	initCtx, initCancel := context.WithTimeout(context.Background(), driver.sessionInitTimeout())
+	initCtx, initCancel := context.WithTimeout(parent, driver.sessionInitTimeout())
 	defer initCancel()
 
 	user := driver.auth.GetUser(initCtx, username)
@@ -505,7 +506,22 @@ func (driver *KubeDriver) sessionForContext(ctx *server.Context) (*driverSession
 		clientIP = driver.auth.clientIPFromCtx(ctx)
 	}
 
-	return driver.sessionFor(key, username, clientIP)
+	return driver.sessionForFrom(driver.connContext(ctx), key, username, clientIP)
+}
+
+// connContext returns the context of the connection that owns ctx. A
+// connection that is no longer live gets a cancelled context, so no work starts
+// for it. Without a connection registry the context is background.
+func (driver *KubeDriver) connContext(ctx *server.Context) context.Context {
+	if driver.conns == nil || ctx == nil || ctx.Sess == nil || ctx.Sess.RemoteAddr() == nil {
+		return context.Background()
+	}
+	if connCtx, ok := driver.conns.lookup(ctx.Sess.RemoteAddr().String()); ok {
+		return connCtx
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	return cancelled
 }
 
 // fallbackSession returns the driver-level session, used by the calls that
@@ -541,12 +557,9 @@ func (driver *KubeDriver) initFallbackSession() error {
 		return fmt.Errorf("user not authenticated")
 	}
 
-	ctx := driver.sessionCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	initCtx, initCancel := context.WithTimeout(ctx, driver.sessionInitTimeout())
+	// The fallback session belongs to no connection, so nothing cancels its init
+	// other than the timeout.
+	initCtx, initCancel := context.WithTimeout(context.Background(), driver.sessionInitTimeout())
 	defer initCancel()
 
 	user := driver.auth.GetUser(initCtx, username)
@@ -1087,10 +1100,6 @@ func (driver *KubeDriver) getBackendType(sess *driverSession) string {
 
 // Close handles connection cleanup and metrics recording
 func (driver *KubeDriver) Close() error {
-	if driver.sessionCancel != nil {
-		driver.sessionCancel()
-	}
-
 	// Clean up session mapping to prevent memory leaks
 	if driver.auth != nil && driver.sessionID != "" {
 		driver.auth.ClearSessionUser(driver.sessionID)
