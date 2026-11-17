@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 // TestNoUsernameLabels guards against usernames becoming metric label values.
@@ -18,7 +18,7 @@ func TestNoUsernameLabels(t *testing.T) {
 	RecordFileTransfer("upload", "FilesystemBackend", 10, time.Second)
 	RecordUserSession(time.Minute)
 
-	families, err := prometheus.DefaultGatherer.Gather()
+	families, err := ctrlmetrics.Registry.Gather()
 	require.NoError(t, err)
 
 	gathered := make(map[string]bool)

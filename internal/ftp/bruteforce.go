@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/rossigee/kubeftpd/internal/metrics"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -17,7 +18,7 @@ const (
 )
 
 var (
-	authLockoutsTotal = promauto.NewCounterVec(
+	authLockoutsTotal = metrics.Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_auth_lockouts_total",
 			Help: "Total number of brute-force lockout events",
@@ -25,7 +26,7 @@ var (
 		[]string{"type"}, // "username" or "ip"
 	)
 
-	authLockedAccounts = promauto.NewGaugeVec(
+	authLockedAccounts = metrics.Factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "kubeftpd_auth_locked_accounts",
 			Help: "Number of currently locked usernames or IPs",
