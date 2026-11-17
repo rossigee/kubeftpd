@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"goftp.io/server/v2"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -20,7 +19,7 @@ import (
 
 var (
 	// Prometheus metrics for password security monitoring
-	authAttempts = promauto.NewCounterVec(
+	authAttempts = metrics.Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_auth_attempts_total",
 			Help: "Total number of FTP authentication attempts",
@@ -28,7 +27,7 @@ var (
 		[]string{"method", "result"},
 	)
 
-	authFailures = promauto.NewCounterVec(
+	authFailures = metrics.Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_auth_failures_total",
 			Help: "Total number of FTP authentication failures",
@@ -36,7 +35,7 @@ var (
 		[]string{"reason"},
 	)
 
-	secretAccessErrors = promauto.NewCounterVec(
+	secretAccessErrors = metrics.Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_secret_access_errors_total",
 			Help: "Total number of secret access errors",
@@ -44,7 +43,7 @@ var (
 		[]string{"namespace", "secret_name", "error_type"},
 	)
 
-	userSecretMissing = promauto.NewGaugeVec(
+	userSecretMissing = metrics.Factory.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "kubeftpd_user_secret_missing",
 			Help: "Users with missing password secrets",

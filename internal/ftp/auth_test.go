@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -14,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 )
@@ -713,7 +713,7 @@ func TestAuthMetrics_NoUsernameLabel(t *testing.T) {
 	_, err := auth.CheckPasswd(nil, "testuser", "wrongpass")
 	assert.NoError(t, err)
 
-	families, err := prometheus.DefaultGatherer.Gather()
+	families, err := ctrlmetrics.Registry.Gather()
 	assert.NoError(t, err)
 
 	var foundFailures, foundAttempts, foundLogins bool

@@ -5,18 +5,23 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
+
+// factory registers metrics on the registry that the manager serves at /metrics.
+// The default Prometheus registry is not served, so metrics registered there are never scraped.
+var Factory = promauto.With(ctrlmetrics.Registry)
 
 var (
 	// Connection metrics
-	ActiveConnections = promauto.NewGauge(
+	ActiveConnections = Factory.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "kubeftpd_active_connections",
 			Help: "Number of active FTP connections",
 		},
 	)
 
-	ConnectionsTotal = promauto.NewCounterVec(
+	ConnectionsTotal = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_connections_total",
 			Help: "Total number of FTP connections",
@@ -24,7 +29,7 @@ var (
 		[]string{"client_ip"},
 	)
 
-	ConnectionDuration = promauto.NewHistogram(
+	ConnectionDuration = Factory.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "kubeftpd_connection_duration_seconds",
 			Help:    "Duration of FTP connections in seconds",
@@ -33,7 +38,7 @@ var (
 	)
 
 	// File operation metrics
-	FileOperationsTotal = promauto.NewCounterVec(
+	FileOperationsTotal = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_file_operations_total",
 			Help: "Total number of file operations",
@@ -41,7 +46,7 @@ var (
 		[]string{"operation", "backend_type", "result"},
 	)
 
-	FileTransferBytes = promauto.NewCounterVec(
+	FileTransferBytes = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_file_transfer_bytes_total",
 			Help: "Total bytes transferred",
@@ -49,7 +54,7 @@ var (
 		[]string{"direction", "backend_type"},
 	)
 
-	FileTransferDuration = promauto.NewHistogramVec(
+	FileTransferDuration = Factory.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "kubeftpd_file_transfer_duration_seconds",
 			Help:    "Duration of file transfers in seconds",
@@ -59,7 +64,7 @@ var (
 	)
 
 	// User activity metrics
-	UserLoginTotal = promauto.NewCounterVec(
+	UserLoginTotal = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_user_logins_total",
 			Help: "Total user login attempts",
@@ -67,7 +72,7 @@ var (
 		[]string{"result"},
 	)
 
-	UserSessionDuration = promauto.NewHistogram(
+	UserSessionDuration = Factory.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "kubeftpd_user_session_duration_seconds",
 			Help:    "Duration of user sessions in seconds",
@@ -76,7 +81,7 @@ var (
 	)
 
 	// Backend metrics
-	BackendOperationsTotal = promauto.NewCounterVec(
+	BackendOperationsTotal = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_backend_operations_total",
 			Help: "Total backend operations",
@@ -84,7 +89,7 @@ var (
 		[]string{"backend_name", "backend_type", "operation", "result"},
 	)
 
-	BackendResponseTime = promauto.NewHistogramVec(
+	BackendResponseTime = Factory.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "kubeftpd_backend_response_time_seconds",
 			Help:    "Backend operation response time in seconds",
@@ -94,7 +99,7 @@ var (
 	)
 
 	// System metrics
-	ErrorsTotal = promauto.NewCounterVec(
+	ErrorsTotal = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_errors_total",
 			Help: "Total errors by type",
@@ -102,7 +107,7 @@ var (
 		[]string{"error_type", "component"},
 	)
 
-	ConfigReloads = promauto.NewCounterVec(
+	ConfigReloads = Factory.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "kubeftpd_config_reloads_total",
 			Help: "Total configuration reloads",
