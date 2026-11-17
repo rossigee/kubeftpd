@@ -16,13 +16,16 @@ spec:
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
-        # TODO(user): The option insecureSkipVerify: true is not recommended for production since it disables
-        # certificate verification, exposing the system to potential man-in-the-middle attacks.
-        # For production environments, it is recommended to use cert-manager for automatic TLS certificate management.
-        # To apply this configuration, enable cert-manager and use the patch located at
-        # config/prometheus/servicemonitor_tls_patch.yaml,
-        # which securely references the certificate from the 'metrics-server-cert' secret.
-        insecureSkipVerify: true
+        # Verifies the manager's metrics certificate against the CA that cert-manager
+        # issues into the 'metrics-server-cert' secret. Prerequisite: enable the
+        # [CERTMANAGER] section in config/default/kustomization.yaml, which mounts
+        # that secret into the manager. Without it the manager serves a certificate
+        # this CA does not sign, and Prometheus will not scrape the endpoint.
+        serverName: kubeftpd-controller-manager-metrics-service.kubeftpd-system.svc
+        ca:
+          secret:
+            name: metrics-server-cert
+            key: ca.crt
   selector:
     matchLabels:
       control-plane: controller-manager
