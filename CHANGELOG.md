@@ -7,12 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.10] - 2026-11-17
+
+### Security
+- **TLS verification**: the default ServiceMonitor verifies the manager's metrics certificate against the cert-manager CA in the `metrics-server-cert` secret instead of `insecureSkipVerify: true`. The CERTMANAGER section of `config/default` must be enabled, because it mounts that secret into the manager. The ServiceMonitor is opt-in, so default installs are unaffected. `config/prometheus/monitor_tls_patch.yaml` is removed; its content is now in `monitor.yaml`
+- **gosec**: G402 (TLS `InsecureSkipVerify`) is no longer excluded repository-wide. The one intentional use, the per-backend `spec.tls.insecureSkipVerify` option, carries a `#nosec` annotation with its reason
+- **Dev and e2e**: the generated dev MinIO backend and the e2e MinIO backends no longer set `insecureSkipVerify`. Their endpoints are plain HTTP, so the setting had no effect
+
+### Changed
+- **Dependencies**: Go modules updated to their latest versions, including `controller-runtime` v0.25.3 and `ginkgo` v2.34.0
+- **Tooling**: `controller-tools` pinned to v0.23.0 and `kustomize` to v5.8.3. The regenerated CRDs differ only in the `controller-gen` version annotation
+- **Pre-commit**: Lucas-C/pre-commit-hooks v1.5.6, yamllint v1.38.0, and hadolint v2.15.1 (stable, replacing the beta)
+
 ### Added
 - **Session init timeout**: `FTP_SESSION_INIT_TIMEOUT` (seconds, default `30`) bounds the user lookup and backend setup of a session. The Helm chart exposes it as `ftp.settings.sessionInitTimeout`
 
 ### Fixed
 - **Session lifecycle**: goftp never calls `KubeDriver.Init` or `Close`, so per-session context and cleanup did not run. Each accepted connection now gets a context that is cancelled when the connection closes, and a session's user lookup and backend setup run under it. Closing a connection also forgets its session user
 - **Connection metrics**: `kubeftpd_connections_total`, `kubeftpd_active_connections` and `kubeftpd_connection_duration_seconds` are recorded when a connection opens and closes
+- **Lint and tests**: `validatePasswordStrength` is split so `go-cyclo` passes; `TestGetDefaultFTPPort` asserts both UID branches on any runner; the MinIO constructor tests point at a closed local port and skip under `-short`, keeping the unit-test hook inside its 30s limit
+- **YAML**: the YAML files now pass yamllint (document start markers, quoted `"on"` keys, indentation, long lines)
 
 ## [v0.10.4] - 2026-11-13
 
