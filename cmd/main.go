@@ -50,12 +50,19 @@ import (
 	ftpv1 "github.com/rossigee/kubeftpd/api/v1"
 	"github.com/rossigee/kubeftpd/internal/controller"
 	"github.com/rossigee/kubeftpd/internal/ftp"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
 	// Version information - set during build
-	version = "v0.10.11"
+	version = "v0.10.12"
 	commit  = "unknown"
 	date    = "unknown"
 
@@ -282,6 +289,61 @@ func processEnvironmentOverrides(config *appConfig) {
 	}
 }
 
+// setupTracing initializes an OTLP trace exporter and TracerProvider when
+// OTEL_EXPORTER_OTLP_* environment variables are present (as injected by the
+// Helm chart / Flux values for SigNoz).
+// It returns a shutdown function that should be called on exit. Errors are
+// logged but do not prevent startup (tracing is best-effort).
+func setupTracing(ctx context.Context) func() {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	tracesEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	svc := os.Getenv("OTEL_SERVICE_NAME")
+
+	if endpoint == "" && tracesEndpoint == "" && svc == "" {
+		return func() {}
+	}
+
+	setupLog.Info("initializing OpenTelemetry tracing", "endpoint", endpoint, "service", svc)
+
+	exporter, err := otlptracegrpc.New(ctx)
+	if err != nil {
+		setupLog.Error(err, "failed to create OTLP trace exporter (tracing disabled)")
+		return func() {}
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithFromEnv(), // picks up OTEL_RESOURCE_ATTRIBUTES + standard OTEL_ vars
+		resource.WithTelemetrySDK(),
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String(svc),
+			semconv.ServiceVersionKey.String(version),
+		),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create OTEL resource (tracing disabled)")
+		return func() {}
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+
+	// Standard W3C propagators so traces can be correlated if we ever
+	// add outbound calls that participate in tracing.
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	return func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			setupLog.Error(err, "error shutting down tracer provider")
+		}
+	}
+}
+
 func setupTLSOptions(enableHTTP2 bool) []func(*tls.Config) {
 	var tlsOpts []func(*tls.Config)
 
@@ -500,9 +562,21 @@ func setupHealthChecks(mgr ctrl.Manager) error {
 	return nil
 }
 
+// fatal logs the error and exits. Used to keep main() complexity under the
+// cyclo limit while preserving the original error handling behavior.
+func fatal(msg string, err error) {
+	setupLog.Error(err, msg)
+	os.Exit(1)
+}
+
 func main() {
 	config, opts := parseFlags()
 	processEnvironmentOverrides(config)
+
+	// Initialize tracing early so that spans created by the FTP server
+	// (when OTEL_* env vars are set) are actually exported to SigNoz.
+	tracingShutdown := setupTracing(context.Background())
+	defer tracingShutdown()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	setupLog.Info("Starting KubeFTPd", "version", version, "commit", commit, "date", date)
@@ -511,15 +585,13 @@ func main() {
 
 	webhookServer, webhookCertWatcher, err := setupWebhookServer(config, tlsOpts)
 	if err != nil {
-		setupLog.Error(err, "Failed to setup webhook server")
-		os.Exit(1)
+		fatal("Failed to setup webhook server", err)
 	}
 
 	mux := createHTTPHandler()
 	metricsServerOptions, metricsCertWatcher, err := setupMetricsServer(config, tlsOpts, mux)
 	if err != nil {
-		setupLog.Error(err, "Failed to setup metrics server")
-		os.Exit(1)
+		fatal("Failed to setup metrics server", err)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -529,23 +601,19 @@ func main() {
 		HealthProbeBindAddress: ":8081",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		fatal("unable to start manager", err)
 	}
 
 	if err := setupControllers(mgr, config); err != nil {
-		setupLog.Error(err, "Failed to setup controllers")
-		os.Exit(1)
+		fatal("Failed to setup controllers", err)
 	}
 
 	if err := addCertWatchersToManager(mgr, metricsCertWatcher, webhookCertWatcher); err != nil {
-		setupLog.Error(err, "Failed to add certificate watchers")
-		os.Exit(1)
+		fatal("Failed to add certificate watchers", err)
 	}
 
 	if err := setupHealthChecks(mgr); err != nil {
-		setupLog.Error(err, "Failed to setup health checks")
-		os.Exit(1)
+		fatal("Failed to setup health checks", err)
 	}
 
 	// Trigger initial built-in user reconciliation
@@ -615,13 +683,9 @@ func main() {
 	// Wait for either component to fail or context cancellation
 	select {
 	case err := <-ftpErrorChan:
-		setupLog.Error(err, "FTP server failed to start - shutting down")
-		cancel()
-		os.Exit(1)
+		fatal("FTP server failed to start - shutting down", err)
 	case err := <-managerErrorChan:
-		setupLog.Error(err, "manager failed to start - shutting down")
-		cancel()
-		os.Exit(1)
+		fatal("manager failed to start - shutting down", err)
 	case <-ctx.Done():
 		setupLog.Info("shutting down gracefully")
 	}

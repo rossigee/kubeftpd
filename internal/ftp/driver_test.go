@@ -602,25 +602,25 @@ func TestTracingConfiguration(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
 		t.Setenv("OTEL_SERVICE_NAME", "")
 
-		assert.False(t, isTracingEnabled())
+		assert.False(t, IsTracingEnabled())
 	})
 
 	t.Run("tracing enabled with OTLP endpoint", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
 
-		assert.True(t, isTracingEnabled())
+		assert.True(t, IsTracingEnabled())
 	})
 
 	t.Run("tracing enabled with traces endpoint", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://localhost:4318/v1/traces")
 
-		assert.True(t, isTracingEnabled())
+		assert.True(t, IsTracingEnabled())
 	})
 
 	t.Run("tracing enabled with service name", func(t *testing.T) {
 		t.Setenv("OTEL_SERVICE_NAME", "kubeftpd")
 
-		assert.True(t, isTracingEnabled())
+		assert.True(t, IsTracingEnabled())
 	})
 }
 

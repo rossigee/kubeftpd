@@ -416,7 +416,11 @@ func (w *webDavBackendImpl) WriteFile(filePath string, reader io.Reader) (int64,
 	// the expected result of the module's image pipeline, not truncation.
 	// A small-file scanner (printer1_*.jpg, a 26 KB JPEG that bypassed the
 	// re-encode path) is the common case here.
-	fileInfo, err := w.Stat(filePath)
+	//
+	// Retry verification a few times. The Odoo WebDAV module frequently
+	// closes connections (EOF) during/after image re-encoding, causing the
+	// immediate post-upload PROPFIND to fail transiently.
+	fileInfo, err := w.statWithRetry(filePath, 3)
 	if err != nil {
 		return 0, fmt.Errorf("failed to verify file %s after upload: %w", filePath, err)
 	}
@@ -653,6 +657,30 @@ func (w *webdavReadSeekCloser) Seek(offset int64, whence int) (int64, error) {
 	default:
 		return 0, fmt.Errorf("invalid whence")
 	}
+}
+
+// statWithRetry calls Stat with a small number of retries on transient
+// network errors (EOF, connection reset, etc.). This works around the Odoo
+// WebDAV module frequently closing connections during image re-encoding.
+func (w *webDavBackendImpl) statWithRetry(filePath string, attempts int) (*FileInfo, error) {
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		fi, err := w.Stat(filePath)
+		if err == nil {
+			return fi, nil
+		}
+		lastErr = err
+		// Only retry on likely transient network errors
+		if strings.Contains(err.Error(), "EOF") ||
+			strings.Contains(err.Error(), "connection reset") ||
+			strings.Contains(err.Error(), "connection refused") ||
+			strings.Contains(err.Error(), "timeout") {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		return nil, err // non-retryable error
+	}
+	return nil, lastErr
 }
 
 // webdavCountingReader counts bytes read from the underlying reader

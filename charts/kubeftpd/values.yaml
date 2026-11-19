@@ -14,7 +14,7 @@ controller:
   image:
     registry: ghcr.io
     repository: rossigee/kubeftpd
-    tag: "v0.10.11"
+    tag: "v0.10.12"
     pullPolicy: IfNotPresent
     pullSecrets: []
 
@@ -44,6 +44,24 @@ controller:
 
   # Log level (debug, info, warn, error)
   logLevel: "info"
+
+  # OpenTelemetry tracing configuration (OTLP)
+  # When enabled, sets OTEL_EXPORTER_OTLP_* environment variables so
+  # kubeftpd exports traces (ftp.upload, ftp.download, etc.) to SigNoz
+  # or any OTLP collector. The application now properly initializes the
+  # SDK + exporter (see cmd/main.go).
+  tracing:
+    enabled: false
+    # OTLP endpoint (gRPC). Example for in-cluster TLS receiver:
+    # https://k8s-infra-otel-agent.opentelemetry.svc.cluster.local:4327
+    endpoint: ""
+    serviceName: kubeftpd
+    # Set to true when connecting to an insecure (non-TLS) collector.
+    # For TLS, also provide a certificate via extraEnv or the mount below.
+    insecure: true
+    # Optional path to CA certificate for verifying the collector when using TLS.
+    # Usually mounted via extraVolumes (e.g. internal-ca-certs configMap).
+    certificate: ""
 
   # Node selector and tolerations
   nodeSelector: {}

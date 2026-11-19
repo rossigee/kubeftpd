@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.10.12] - 2026-11-19
+
+### Added
+- **OpenTelemetry tracing**: proper initialization of OTLP trace exporter and TracerProvider. Spans for FTP uploads/downloads (and post-upload WebDAV verification) are now actually exported when `OTEL_EXPORTER_OTLP_ENDPOINT` (and related vars) are set. Includes W3C propagators, resource attributes (service name + version), and automatic shutdown. Enables traces in SigNoz when the Helm chart or Flux values inject the OTEL_* environment variables (now using the TLS receiver on the k8s-infra agent).
+
+### Fixed
+- **WebDAV backend**: added `statWithRetry()` (3 attempts with short backoff) around the post-upload `Stat` (PROPFIND) verification. The Odoo WebDAV module frequently closes connections (EOF) during image re-encoding; this makes verification resilient to transient network errors.
+- **Tracing configuration**: `IsTracingEnabled()` is now exported and the internal guard uses it consistently. Tests updated.
+
+### Changed
+- Helm chart now documents and supports injecting OTEL tracing configuration (endpoint, service name, insecure flag) via `controller.tracing`.
+
 ## [v0.10.11] - 2026-11-17
 
 ### Fixed
