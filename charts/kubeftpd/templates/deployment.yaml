@@ -63,6 +63,20 @@ spec:
         - name: HTTP_PORT
           value: "8080"
         {{- end }}
+        {{- if .Values.controller.tracing.enabled }}
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.controller.tracing.endpoint | quote }}
+        - name: OTEL_SERVICE_NAME
+          value: {{ .Values.controller.tracing.serviceName | quote }}
+        {{- if .Values.controller.tracing.insecure }}
+        - name: OTEL_EXPORTER_OTLP_INSECURE
+          value: "true"
+        {{- end }}
+        {{- if .Values.controller.tracing.certificate }}
+        - name: OTEL_EXPORTER_OTLP_CERTIFICATE
+          value: {{ .Values.controller.tracing.certificate | quote }}
+        {{- end }}
+        {{- end }}
         {{- with .Values.controller.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

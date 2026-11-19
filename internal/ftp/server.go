@@ -65,8 +65,10 @@ func wrapStorageError(err error) error {
 	return fmt.Errorf("storage system unavailable")
 }
 
-// isTracingEnabled returns true if OpenTelemetry is configured
-func isTracingEnabled() bool {
+// IsTracingEnabled returns true if OpenTelemetry is configured via
+// the standard OTEL_EXPORTER_OTLP_* or OTEL_SERVICE_NAME environment
+// variables. This is used both internally and by tests.
+func IsTracingEnabled() bool {
 	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" ||
 		os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" ||
 		os.Getenv("OTEL_SERVICE_NAME") != ""
@@ -877,7 +879,7 @@ func (driver *KubeDriver) GetFile(ctx *server.Context, path string, offset int64
 		return 0, nil, wrapStorageError(err)
 	}
 
-	if isTracingEnabled() {
+	if IsTracingEnabled() {
 		_, span = tracer.Start(traceCtx, "ftp.download",
 			trace.WithAttributes(
 				attribute.String("ftp.user", sess.username),
@@ -960,7 +962,7 @@ func (driver *KubeDriver) PutFile(ctx *server.Context, path string, reader io.Re
 		return 0, wrapStorageError(err)
 	}
 
-	if isTracingEnabled() {
+	if IsTracingEnabled() {
 		_, span = tracer.Start(traceCtx, operation,
 			trace.WithAttributes(
 				attribute.String("ftp.user", sess.username),
