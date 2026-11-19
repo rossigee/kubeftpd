@@ -86,3 +86,6 @@ local-secrets/
 
 # Main binary (repo root only; a bare pattern would also ignore charts/kubeftpd)
 /kubeftpd
+
+# Claude Code / AI agent tooling (local settings, sessions, etc. - never commit)
+.claude/
